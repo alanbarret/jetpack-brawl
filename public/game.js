@@ -52,7 +52,7 @@ let myMesh = null, showcase = null, inMenu = true, booted = false;
 // ---------- loading screen
 const TIPS = [
   'Jump off a high ledge — your jetpack fires on its own and slows the fall.',
-  'Hold JET to climb, hold ▼ / C to drop back down.',
+  'Phone: slide the move stick far up to lock running, tap a weapon slot to switch guns.',
   'Headshots deal 80% extra damage.',
   'Sneak up behind someone: a melee backstab is an instant kill.',
   'Grab a weapon pickup and press E to swap for it.',
@@ -667,6 +667,13 @@ initControls({
   toggleBoard: () => { boardOpen = !boardOpen; renderBoard(); $('board').style.display = boardOpen ? 'block' : 'none'; },
   active: () => connected && !paused && !inMenu && !!me,
   fuel: () => local.fuel, slot: () => me?.slot ?? 0,
+  nearPickup: () => {
+    if (!me?.alive) return false;
+    for (const m of pickMeshes.values())
+      if (m.userData.type === 'weapon' && !me.w.some((x) => x && x.id === m.userData.w) &&
+          Math.hypot(m.position.x - local.pos[0], m.userData.baseY - 0.5 - local.pos[1], m.position.z - local.pos[2]) < 2.2) return true;
+    return false;
+  },
   weapons: () => (me?.w || []).map((x) => (x ? { name: WEAPONS[x.id].name } : null)),
 });
 
@@ -734,7 +741,7 @@ function updateHUD(dt) {
   $('hov').textContent = local.thrusting && !local.onGround && !(keys.Space || touch.jet) ? '· BRAKE' : '';
   const w = me.w[me.slot];
   if (w) setHTML($('ammo'), `<span>${WEAPONS[w.id].name}</span>${w.mag}<small>/${w.reserve}</small>` + (tn < reloadEnd ? '<div class="rl">RELOADING</div>' : ''));
-  setHTML($('slots'), me.w.map((x, i) => `<div class="slot ${i === me.slot ? 'on' : ''}">${i + 1} ${x ? WEAPONS[x.id].name : '—'}</div>`).join(''));
+  setHTML($('slots'), me.w.map((x, i) => `<div class="slot ${i === me.slot ? 'on' : ''}" data-i="${i}">${i + 1} ${x ? WEAPONS[x.id].name : '—'}</div>`).join(''));
   setHTML($('nades'), `💣 ${me.gn}`);
   const tl = Math.max(0, timeLeft - (tn - timeLeftAt));
   $('timer').textContent = state === 'ended' ? 'Next match ' + fmt(tl) : fmt(tl);
@@ -977,6 +984,11 @@ function initMenu() {
   $('pcopy').onclick = (e) => copyRoom(roomCode, e.currentTarget);
   $('mcopy').onclick = (e) => copyRoom($('roomin').value.trim().toUpperCase(), e.currentTarget);
   $('resume').onclick = () => setPause(false);
+  $('slots').addEventListener('touchstart', (e) => {            // PUBG-style: tap a weapon slot to switch
+    const el = e.target.closest('.slot'); if (!el || !me) return;
+    e.preventDefault(); const i = +el.dataset.i;
+    if (i !== me.slot && me.w[i]) { sendAct('swap'); sfx('tap'); }
+  }, { passive: false });
   $('editlayout').onclick = () => { initAudio(); sfx('ui'); openEditor(); };
   $('pedit').onclick = () => openEditor();
   if (!isTouch) $('pedit').style.display = 'none';

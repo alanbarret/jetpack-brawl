@@ -7,29 +7,34 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // ---------- control settings (persisted, prefix c_)
 export const CDEF = {
-  aim: 'stick', stickfire: true, joy: 'float', dead: 0.12, zsens: 0.45, gsens: 1,
+  aim: 'swipe', stickfire: false, joy: 'float', dead: 0.12, zsens: 0.45, gsens: 1,
   assist: 'low', gyro: false, autofire: false, autopick: false, autoreload: false,
   vibe: true, left: false, opa: 0.8, layout: null,
 };
+let nearPick = false;
+const hiddenBtn = (id) => (id === 'reload' && S.autoreload) || (id === 'pickup' && (S.autopick || !nearPick));
+const btnW = (id, size) => (id === 'pickup' ? size * 2.5 : size);
 
 // ---------- layout: [x, y, scale] as fractions of the screen (right-handed; mirrored for left-handed)
-const BASE = { fire: 78, jet: 78, down: 54, nade: 54, melee: 54, reload: 54, swap: 54, pickup: 54, zoom: 54, board: 44, move: 124, aim: 124 };
-const LABEL = { fire: 'FIRE', jet: 'JET', down: '▼', nade: '💣', melee: '🔪', reload: 'R', swap: '⇄', pickup: 'E', zoom: '🔍', board: '☰', move: 'MOVE', aim: 'AIM' };
+// PUBG-style: big FIRE on the right (drag it to aim), small FIRE on the left above the move stick,
+// scope + reload around the right FIRE, JET bottom-right, grenade/melee bottom, weapon slots bottom-centre.
+const BASE = { fire: 84, lfire: 68, jet: 76, nade: 54, melee: 54, reload: 54, pickup: 46, zoom: 54, board: 44, move: 124, aim: 124 };
+const LABEL = { fire: 'FIRE', lfire: 'FIRE', jet: 'JET', nade: '💣', melee: '🔪', reload: 'R', pickup: 'PICK UP', zoom: '🔍', board: '☰', move: 'MOVE', aim: 'AIM' };
 export const PRESETS = {
   classic: {
-    fire: [0.918, 0.618, 1], jet: [0.8, 0.833, 1], down: [0.932, 0.854, 1], nade: [0.705, 0.777, 1], melee: [0.79, 0.623, 1],
-    reload: [0.932, 0.423, 1], swap: [0.852, 0.403, 1], pickup: [0.769, 0.444, 1], zoom: [0.688, 0.603, 1], board: [0.159, 0.082, 1],
-    move: [0.14, 0.72, 1], aim: [0.56, 0.7, 1],
+    fire: [0.86, 0.5, 1], lfire: [0.09, 0.46, 1], zoom: [0.955, 0.36, 1], reload: [0.75, 0.36, 1],
+    jet: [0.92, 0.82, 1], melee: [0.8, 0.885, 1], nade: [0.685, 0.885, 1], pickup: [0.62, 0.58, 1], board: [0.159, 0.082, 1],
+    move: [0.15, 0.75, 1], aim: [0.56, 0.7, 1],
   },
   thumbs: {
-    fire: [0.905, 0.7, 1.1], jet: [0.775, 0.86, 1.1], down: [0.945, 0.915, 0.9], nade: [0.655, 0.875, 0.95], melee: [0.79, 0.6, 0.95],
-    reload: [0.935, 0.43, 0.9], swap: [0.84, 0.4, 0.9], pickup: [0.745, 0.43, 0.9], zoom: [0.665, 0.66, 0.95], board: [0.159, 0.082, 1],
-    move: [0.15, 0.73, 1.05], aim: [0.53, 0.72, 1],
+    fire: [0.85, 0.55, 1.1], lfire: [0.1, 0.5, 1.05], zoom: [0.95, 0.4, 1], reload: [0.74, 0.4, 1],
+    jet: [0.915, 0.83, 1.1], melee: [0.79, 0.89, 1], nade: [0.675, 0.89, 1], pickup: [0.6, 0.62, 1], board: [0.159, 0.082, 1],
+    move: [0.16, 0.76, 1.05], aim: [0.55, 0.72, 1],
   },
   claw: {
-    fire: [0.8, 0.3, 1], zoom: [0.925, 0.29, 1], jet: [0.25, 0.33, 1], down: [0.37, 0.3, 0.95], nade: [0.68, 0.25, 0.95],
-    melee: [0.93, 0.62, 1], reload: [0.935, 0.85, 0.95], swap: [0.83, 0.85, 0.95], pickup: [0.725, 0.87, 0.95], board: [0.159, 0.082, 1],
-    move: [0.15, 0.74, 1], aim: [0.6, 0.66, 1],
+    fire: [0.86, 0.55, 1], lfire: [0.27, 0.3, 1], jet: [0.8, 0.27, 1], zoom: [0.93, 0.3, 0.95], reload: [0.69, 0.27, 0.95],
+    melee: [0.92, 0.84, 1], nade: [0.8, 0.86, 1], pickup: [0.62, 0.58, 1], board: [0.159, 0.082, 1],
+    move: [0.15, 0.75, 1], aim: [0.6, 0.66, 1],
   },
 };
 const IDS = Object.keys(BASE);
@@ -52,8 +57,9 @@ export function applyLayout() {
   document.body.classList.toggle('lefty', !!S.left && api.isTouch);
   for (const b of document.querySelectorAll('#touch .tbtn')) {
     const id = b.dataset.id, p = place(id);
-    Object.assign(b.style, { left: p.x - p.size / 2 + 'px', top: p.y - p.size / 2 + 'px', width: p.size + 'px', height: p.size + 'px', fontSize: Math.round(p.size * (BASE[id] > 60 ? 0.21 : 0.33)) + 'px' });
-    b.style.display = (id === 'reload' && S.autoreload) || (id === 'pickup' && S.autopick) ? 'none' : 'flex';
+    const w = btnW(id, p.size);
+    Object.assign(b.style, { left: p.x - w / 2 + 'px', top: p.y - p.size / 2 + 'px', width: w + 'px', height: p.size + 'px', fontSize: Math.round(p.size * (id === 'pickup' ? 0.3 : BASE[id] > 60 ? 0.21 : 0.33)) + 'px' });
+    b.style.display = hiddenBtn(id) ? 'none' : 'flex';
   }
   for (const k of ['move', 'aim']) {
     const el = $(k === 'move' ? 'mjoy' : 'ajoy'), p = place(k);
@@ -66,7 +72,7 @@ export function applyLayout() {
 }
 function setJoy(el, x, y, dx, dy) {
   el.style.left = x + 'px'; el.style.top = y + 'px';
-  el.firstElementChild.style.transform = `translate(-50%,-50%) translate(${dx}px,${dy}px)`;
+  el.querySelector('.knob').style.transform = `translate(-50%,-50%) translate(${dx}px,${dy}px)`;
 }
 
 // ---------- vibration
@@ -99,7 +105,7 @@ function onMotion(e) {
 // ---------- touch handling
 const mv = { id: null, ox: 0, oy: 0 };                         // move stick
 const lk = { id: null, mode: null, ox: 0, oy: 0, lx: 0, ly: 0, ax: 0, ay: 0 };   // aim stick / swipe look
-let fireTouch = null, lastFireTap = 0, wheel = null;
+let fireTouch = null, lastFireTap = 0, wheel = null, fires = 0;
 
 function lookGain() { return 0.006 * S.sens * (api.isZoom() ? S.zsens : 1) * api.lookScale(); }
 function swipe(dx, dy) { const g = lookGain(); api.look(-dx * g, -dy * g); }
@@ -111,6 +117,7 @@ function canvasStart(e) {
     const x = t.clientX, y = t.clientY;
     const moveSide = S.left ? x > innerWidth * 0.6 : x < innerWidth * 0.4;
     if (moveSide && mv.id === null) {
+      if (T.runLock) setRunLock(false);
       const el = $('mjoy'), fixed = S.joy === 'fixed';
       mv.id = t.identifier; mv.ox = fixed ? +el.dataset.fx : x; mv.oy = fixed ? +el.dataset.fy : y;
       el.classList.add('act'); el.style.display = 'block'; setJoy(el, mv.ox, mv.oy, 0, 0);
@@ -137,6 +144,8 @@ function moveStick(x, y) {
   const L = Math.hypot(dx, dy); if (L > 1) { dx /= L; dy /= L; }
   const Lc = Math.min(1, L), k = Lc < S.dead ? 0 : (Lc - S.dead) / (1 - S.dead) / (Lc || 1);
   T.mx = dx * k; T.mz = -dy * k; T.sp = Lc > 0.95;
+  const far = (mv.oy - y) / R > 1.7 && Math.abs(x - mv.ox) < R * 0.8;      // finger dragged well above the stick
+  if (far !== mv.lockArm) { mv.lockArm = far; el.classList.toggle('lockarm', far); if (far) buzz('tap'); }
   setJoy(el, mv.ox, mv.oy, dx * R * 0.62, dy * R * 0.62);
 }
 function aimStick(x, y) {
@@ -153,7 +162,7 @@ function canvasMove(e) {
   for (const t of e.changedTouches) {
     if (t.identifier === mv.id) moveStick(t.clientX, t.clientY);
     else if (t.identifier === lk.id) {
-      if (lk.mode === 'stick') aimStick(t.clientX, t.clientY);
+      if (lk.mode === 'stick') { swipe(t.clientX - lk.lx, t.clientY - lk.ly); lk.lx = t.clientX; lk.ly = t.clientY; aimStick(t.clientX, t.clientY); }
       else { swipe(t.clientX - lk.lx, t.clientY - lk.ly); lk.lx = t.clientX; lk.ly = t.clientY; }
     }
   }
@@ -162,7 +171,8 @@ function canvasEnd(e) {
   for (const t of e.changedTouches) {
     if (t.identifier === mv.id) {
       mv.id = null; T.mx = T.mz = 0; T.sp = false;
-      const el = $('mjoy'); el.classList.remove('act');
+      const el = $('mjoy'); el.classList.remove('act', 'lockarm');
+      if (mv.lockArm) { mv.lockArm = false; setRunLock(true); }
       setJoy(el, +el.dataset.fx, +el.dataset.fy, 0, 0); el.style.display = S.joy === 'fixed' ? 'block' : 'none';
     }
     if (t.identifier === lk.id) {
@@ -172,6 +182,11 @@ function canvasEnd(e) {
     }
   }
   refreshAiming();
+}
+
+function setRunLock(on) {
+  T.runLock = on; $('runlock').style.display = on ? 'block' : 'none';
+  if (on) { T.mx = 0; T.mz = 1; T.sp = true; buzz('kill'); } else { T.mx = T.mz = 0; T.sp = false; }
 }
 
 // buttons
@@ -186,8 +201,9 @@ function bindButton(b) {
     const t = e.changedTouches[0]; tid = t.identifier; sx = lx = t.clientX; sy = ly = t.clientY;
     press(b);
     switch (id) {
+      case 'lfire': fires++; T.fire = true; break;
       case 'fire': {
-        T.fire = true; fireTouch = tid;
+        fires++; T.fire = true; fireTouch = tid;
         const n = performance.now(); if (n - lastFireTap < 300) { api.setZoom(!api.isZoom()); lastFireTap = 0; } else lastFireTap = n;
         break;
       }
@@ -219,7 +235,8 @@ function bindButton(b) {
     const t = [...e.changedTouches].find((q) => q.identifier === tid); if (!t) return;
     e.preventDefault(); tid = null; release(b);
     switch (id) {
-      case 'fire': T.fire = false; fireTouch = null; break;
+      case 'lfire': fires = Math.max(0, fires - 1); T.fire = fires > 0; break;
+      case 'fire': fires = Math.max(0, fires - 1); T.fire = fires > 0; fireTouch = null; break;
       case 'jet': T.jet = 0; T.down = false; b.classList.remove('lever', 'dive'); lever(b, 0); break;
       case 'down': T.down = false; break;
       case 'nade': T.nade = false; if (!cancel) api.act('nade'); break;
@@ -261,11 +278,12 @@ function closeWheel(apply) {
 }
 
 export function resetTouch() {
-  Object.assign(T, { mx: 0, mz: 0, sp: false, fire: false, sfire: false, jet: 0, down: false, nade: false, aiming: false });
+  Object.assign(T, { mx: 0, mz: 0, sp: false, fire: false, sfire: false, jet: 0, down: false, nade: false, aiming: false, runLock: false });
+  fires = 0; mv.lockArm = false; if ($('runlock')) $('runlock').style.display = 'none';
   mv.id = lk.id = fireTouch = null; lk.ax = lk.ay = 0;
   if (wheel) closeWheel(false);
   for (const b of document.querySelectorAll('#touch .tbtn')) b.classList.remove('down', 'lever', 'dive');
-  for (const id of ['mjoy', 'ajoy']) $(id)?.classList.remove('act', 'firing');
+  for (const id of ['mjoy', 'ajoy']) $(id)?.classList.remove('act', 'firing', 'lockarm');
   applyLayout();
 }
 
@@ -275,10 +293,16 @@ export function updateControls(dt) {
   if (!api?.isTouch) return;
   if (lk.id !== null && lk.mode === 'stick' && api.active()) {
     const L = Math.hypot(lk.ax, lk.ay);
-    if (L > 0.06) {
-      const c = Math.pow(Math.min(1, L), 1.6) / L, k = S.sens * (api.isZoom() ? S.zsens : 1) * api.lookScale() * dt;
-      api.look(-lk.ax * c * 2.8 * k, -lk.ay * c * 1.8 * k);
+    if (L > 0.45) {                      // past the inner zone: keep turning while held
+      const c = ((Math.min(1, L) - 0.45) / 0.55) / L, k = S.sens * (api.isZoom() ? S.zsens : 1) * api.lookScale() * dt;
+      api.look(-lk.ax * c * 3.2 * k, -lk.ay * c * 1.8 * k);
     }
+  }
+  const np = !!api.nearPickup();
+  if (np !== nearPick) {
+    nearPick = np;
+    const b = document.querySelector('#touch [data-id=pickup]');
+    if (b) { b.style.display = hiddenBtn('pickup') ? 'none' : 'flex'; if (np && !S.autopick) buzz('tap'); }
   }
   const f = Math.round(api.fuel() * 100) / 100;
   if (f !== lastFuel) {
@@ -346,7 +370,7 @@ export function openEditor() {
   select('fire');
 }
 function select(id) {
-  ed.sel = id; $('edsel').textContent = LABEL[id] === '▼' ? 'DIVE ▼' : LABEL[id];
+  ed.sel = id; $('edsel').textContent = LABEL[id];
   $('edsize').value = ed.l[id][2];
   drawEditor();
 }
@@ -354,20 +378,22 @@ function drawEditor() {
   for (const d of $('edarea').children) {
     const id = d.dataset.id, p = place(id, ed.l);
     const hidden = (id === 'reload' && S.autoreload) || (id === 'pickup' && S.autopick);
-    Object.assign(d.style, { left: p.x - p.size / 2 + 'px', top: p.y - p.size / 2 + 'px', width: p.size + 'px', height: p.size + 'px',
+    d.classList.toggle('pill', id === 'pickup');
+    const w = btnW(id, p.size);
+    Object.assign(d.style, { left: p.x - w / 2 + 'px', top: p.y - p.size / 2 + 'px', width: w + 'px', height: p.size + 'px',
       fontSize: Math.round(p.size * (BASE[id] > 60 ? 0.2 : 0.32)) + 'px', opacity: id === 'move' || id === 'aim' ? 1 : ed.opa });
     d.classList.toggle('sel', id === ed.sel); d.classList.toggle('off', hidden);
   }
 }
 function closeEditor(save) {
-  if (save) { S.layout = ed.l; S.opa = ed.opa; api.store.set('c_layout', ed.l); api.store.set('c_opa', ed.opa); api.toast('Controls layout saved'); }
+  if (save) { S.layout = ed.l; S.opa = ed.opa; api.store.set('c_layout3', ed.l); api.store.set('c_opa', ed.opa); api.toast('Controls layout saved'); }
   $('ctledit').style.display = 'none'; ed = null; applyLayout(); api.sfx('ui');
 }
 
 // ---------- init
 export function initControls(a) {
   api = a; S = a.settings; T = a.touch;
-  for (const k in CDEF) if (!(k in S)) S[k] = a.store.get('c_' + k, CDEF[k]);
+  for (const k in CDEF) if (!(k in S)) S[k] = a.store.get('c_' + (k === 'layout' ? 'layout3' : k), CDEF[k]);
   resetTouch();
   addEventListener('resize', () => setTimeout(applyLayout, 120));
   screen.orientation?.addEventListener?.('change', () => setTimeout(applyLayout, 200));

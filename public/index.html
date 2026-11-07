@@ -173,6 +173,12 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 .joy{position:fixed;transform:translate(-50%,-50%);border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.55);display:none;pointer-events:none;opacity:var(--topa)}
 .joy .knob{position:absolute;left:50%;top:50%;width:42%;height:42%;transform:translate(-50%,-50%);border-radius:50%;background:rgba(255,255,255,.65);box-shadow:0 0 8px rgba(0,0,0,.4)}
 .joy.fixed:not(.act){opacity:calc(var(--topa)*.6)}
+.joy .lockhint{position:absolute;left:50%;top:-58%;transform:translateX(-50%);font-style:normal;font-size:12px;font-weight:800;white-space:nowrap;color:#fff;background:rgba(10,14,9,.75);border:1.5px solid rgba(255,255,255,.55);border-radius:12px;padding:3px 9px;display:none}
+.joy.act .lockhint{display:block}.joy.lockarm .lockhint{background:var(--acc);color:var(--accd);border-color:#ffd88a}
+#runlock{position:fixed;left:calc(16px + var(--sal));bottom:calc(14px + var(--sab));display:none;background:var(--acc);color:var(--accd);font-weight:800;font-size:12px;letter-spacing:.5px;padding:6px 11px;border-radius:14px;pointer-events:none;z-index:11}
+.tbtn.pill,.eitem.pill{border-radius:22px;background:rgba(255,180,58,.85);border-color:#ffd88a;color:#2a1a00;text-shadow:none;letter-spacing:.5px}
+.tbtn[data-id=fire]{background:rgba(255,90,74,.32);border-color:rgba(255,160,150,.9)}
+.tbtn[data-id=lfire]{background:rgba(255,90,74,.28);border-color:rgba(255,160,150,.85)}
 .joy.aim{border-color:rgba(255,200,110,.8)}.joy.aim .knob{background:rgba(255,190,90,.85)}
 .joy.aim.firing{border-color:#ff7a6a}.joy.aim.firing .knob{background:#ff5a4a}
 #wheel{position:fixed;width:208px;height:208px;margin:-104px 0 0 -104px;border-radius:50%;background:rgba(10,14,9,.9);border:2px solid #ffd88a;display:none;z-index:30;pointer-events:none}
@@ -200,8 +206,10 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 .sub{font-size:11px;font-weight:600;letter-spacing:.2px;text-transform:none;color:var(--ink2);display:block;margin-top:2px}
 @media (pointer:coarse){
   #mm{width:96px;height:96px}
-  .bars{width:132px;bottom:auto;top:calc(112px + var(--sat))}
-  body.lefty .bars{left:auto;right:calc(16px + var(--sar));top:calc(116px + var(--sat))}
+  .bars{width:236px;left:50%;transform:translateX(-50%);top:auto;bottom:calc(6px + var(--sab))}
+  .bars .lbl{display:none}
+  #slots{top:auto!important;bottom:calc(44px + var(--sab))!important;left:50%;right:auto!important;transform:translateX(-50%);pointer-events:auto}
+  #slots .slot{padding:8px 14px;font-size:13px;cursor:pointer}
   #feed{top:calc(68px + var(--sat));left:50%;right:auto;transform:translateX(-50%);text-align:center;font-size:11px;white-space:nowrap}
   #ammo{bottom:auto;top:calc(8px + var(--sat));right:calc(58px + var(--sar));font-size:22px;display:flex;align-items:baseline;gap:8px}
   #ammo span{display:inline;font-size:12px}
@@ -270,7 +278,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
       <b>Jump</b><span>Hold <u>JET</u> to climb. Jump off a high ledge and the jetpack <u>slows your fall</u> automatically</span>
       <b>Jet</b><span>Hold to climb · hold <b style="color:inherit">descend</b> to drop</span>
       <b>PC</b><span>WASD move · Space jet · C descend · Shift sprint · Mouse aim/fire · Right-click zoom · R reload · Q swap · G grenade · F melee · E take weapon · Tab scores</span>
-      <b>Phone</b><span>Left thumb: move stick · drag right side: aim · buttons: fire, jet, ▼ descend, grenade, melee…</span>
+      <b>Phone</b><span>PUBG style: left stick moves (slide far up to lock running) · drag the right side to look · big FIRE on the right (drag it to aim) or small FIRE on the left · tap the weapon slots to switch · 🔍 scope · R reload · JET (swipe down = dive) · 💣 hold for arc · PICK UP appears next to weapons</span>
     </div>
     <button class="mbtn ghost" data-go="main">← Back</button>
   </div>
@@ -287,7 +295,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
     <h2>Touch controls</h2>
     <button class="mbtn primary" id="editlayout"><span class="ico">✥</span><span>Edit button layout<small>Move, resize, opacity, presets</small></span></button>
     <div class="lbl2">RIGHT SIDE OF SCREEN</div>
-    <div class="segs" data-set="aim"><button class="seg" data-v="stick">Aim stick</button><button class="seg" data-v="swipe">Swipe to look</button></div>
+    <div class="segs" data-set="aim"><button class="seg" data-v="swipe">Swipe to look</button><button class="seg" data-v="stick">Aim stick</button></div>
     <div class="field"><span>Fire at stick edge<span class="sub">Push the aim stick all the way to shoot</span></span><div class="tog" data-set="stickfire"></div></div>
     <div class="lbl2">JOYSTICKS</div>
     <div class="segs" data-set="joy"><button class="seg" data-v="float">Floating</button><button class="seg" data-v="fixed">Fixed</button></div>
@@ -339,16 +347,16 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 </div>
 
 <div id="touch">
-  <div id="mjoy" class="joy"><div class="knob"></div></div>
+  <div id="mjoy" class="joy"><i class="lockhint">🔒 RUN</i><div class="knob"></div></div>
+  <div id="runlock">🔒 AUTO-RUN · tap left side to stop</div>
   <div id="ajoy" class="joy aim"><div class="knob"></div></div>
   <div class="tbtn" data-id="fire">FIRE</div>
+  <div class="tbtn" data-id="lfire">FIRE</div>
   <div class="tbtn" data-id="jet"><div class="ring"></div><div class="lev"></div><span>JET</span></div>
-  <div class="tbtn" data-id="down">▼</div>
   <div class="tbtn" data-id="nade">💣</div>
   <div class="tbtn" data-id="melee">🔪</div>
   <div class="tbtn" data-id="reload">R</div>
-  <div class="tbtn" data-id="swap">⇄</div>
-  <div class="tbtn" data-id="pickup">E</div>
+  <div class="tbtn pill" data-id="pickup">✋ PICK UP</div>
   <div class="tbtn" data-id="zoom">🔍</div>
   <div class="tbtn" data-id="board">☰</div>
 </div>
@@ -358,7 +366,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
   <div id="edarea"></div>
   <div class="edbar top">
     <span class="edt">PRESETS</span>
-    <button class="seg" data-preset="classic">Classic</button><button class="seg" data-preset="thumbs">Thumbs</button><button class="seg" data-preset="claw">Claw</button>
+    <button class="seg" data-preset="classic">PUBG</button><button class="seg" data-preset="thumbs">Thumbs</button><button class="seg" data-preset="claw">Claw</button>
     <button class="seg" id="edreset">Reset</button>
   </div>
   <div class="edbar bot">
