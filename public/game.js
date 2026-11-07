@@ -357,6 +357,7 @@ function onMessage(m) {
       if (showcase) showcase.visible = false;
       $('room').textContent = (soloMatch ? 'Solo vs bots' : `Room ${m.room}`) + ' · ' + MAPC.name;
       if (!soloMatch) history.replaceState(null, '', `?room=${m.room}`);
+      $('copyroom').style.display = soloMatch ? 'none' : 'inline-block';
       if (!isTouch) { lockPointer(); setTimeout(() => { if (connected && document.pointerLockElement !== cv && !chatOpen) setPause(true); }, 600); }
       goWake();
       break;
@@ -560,9 +561,23 @@ function predictShot() {   // instant local feedback; the server decides real hi
 function doMelee() { sendAct('melee'); sfx('melee'); if (myMesh) swingMelee(myMesh); }
 
 function lockPointer() { try { const p = cv.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch {} }
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  try {
+    const t = document.createElement('textarea'); t.value = text; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); return ok;
+  } catch { return false; }
+}
+async function copyRoom(code, btn) {
+  if (!code) { toast('No room code yet'); return; }
+  const ok = await copyText(code);
+  toast(ok ? `Room code ${code} copied` : `Room code: ${code}`);
+  if (btn && ok) { const o = btn.textContent; btn.textContent = '✓ COPIED'; setTimeout(() => (btn.textContent = o), 1400); }
+}
 function setPause(on) {
   if (on && (!connected || inMenu)) return;
   paused = on; $('pause').style.display = on ? 'flex' : 'none';
+  if (on) { $('pcode').style.display = soloMatch ? 'none' : 'flex'; $('pcodev').textContent = roomCode || ''; }
   if (on) { mouseDown = false; for (const k in keys) keys[k] = false; touch.fire = touch.jet = touch.down = false; if (document.pointerLockElement) document.exitPointerLock?.(); }
   else if (!isTouch && connected) lockPointer();
 }
@@ -758,7 +773,7 @@ function frame() {
 const SHOW_WEAPONS = ['ar', 'smg', 'shotgun', 'sniper', 'rocket', 'pistol'];
 let showIdx = 0, showNext = 0;
 function renderMenuScene(dt, tn) {
-  if (showcase) {
+  if (showcase && inMenu) {
     showcase.visible = true;
     if (tn > showNext) { showNext = tn + 3200; const id = SHOW_WEAPONS[showIdx++ % SHOW_WEAPONS.length]; setWeapon(showcase, id); $('wlabel').textContent = WEAPONS[id].name; }
     showcase.rotation.y = 1.0 + Math.sin(tn * 0.0007) * 0.15;   // 3/4 view, facing the menu
@@ -776,6 +791,7 @@ function renderMenuScene(dt, tn) {
 }
 function render(dt, alpha, tn) {
   if (!me) { renderMenuScene(dt, tn); return; }
+  if (showcase) showcase.visible = false;
   const decay = Math.exp(-dt * 12); renderOffset = renderOffset.map((v) => v * decay);
   const lp = add(lerp3(prevPos, local.pos, alpha), renderOffset);
   const wid = curWeapon(), scoped = zoom && wid === 'sniper';
@@ -917,6 +933,9 @@ function initMenu() {
   tog.onclick = () => { setShadows(!settings.shadows); tog.classList.toggle('on', settings.shadows); };
   $('fsbtn').onclick = toggleFullscreen; $('pfs').onclick = toggleFullscreen;
   $('pausebtn').onclick = () => setPause(true);
+  $('copyroom').onclick = (e) => { e.stopPropagation(); copyRoom(roomCode, e.currentTarget); };
+  $('pcopy').onclick = (e) => copyRoom(roomCode, e.currentTarget);
+  $('mcopy').onclick = (e) => copyRoom($('roomin').value.trim().toUpperCase(), e.currentTarget);
   $('resume').onclick = () => setPause(false);
   $('leave').onclick = leaveMatch;
   $('backmenu').onclick = leaveMatch;
