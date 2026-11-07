@@ -1,59 +1,26 @@
-// server.js — static file server + authoritative WebSocket game server (with solo bots)
+// server.js — static file server + authoritative WebSocket game server
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
-import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import { CFG, WEAPONS, WEAPON_POOL, MAP, stepPlayer, aimDir, rayWorld, rayBox, hitboxes, inBox, clamp } from './public/shared.js';
-import { DIFFS, BOT_NAMES, newBotState, botThink } from './bots.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUB = path.join(__dirname, 'public');
 const PORT = process.env.PORT || 3000;
-const MAX_ROOMS = 60;
-const MIME = {
-  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
-  '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
-};
-// three.js is served from node_modules (installed by `npm install`), so there is no CDN dependency.
-const VENDOR = { '/vendor/three.module.js': path.join(__dirname, 'node_modules/three/build/three.module.js') };
-
-// ---------- static files (in-memory cache, gzip for text assets)
-const fileCache = new Map();
-async function serveFile(req, res, file, cacheControl) {
-  let st;
-  try { st = await fs.promises.stat(file); if (!st.isFile()) throw new Error('nf'); }
-  catch { res.writeHead(404); return res.end('Not found'); }
-  let e = fileCache.get(file);
-  if (!e || e.m !== st.mtimeMs) {
-    const buf = await fs.promises.readFile(file);
-    const type = MIME[path.extname(file)] || 'application/octet-stream';
-    const gz = /^(text\/|application\/json|image\/svg)/.test(type) ? zlib.gzipSync(buf, { level: 9 }) : null;
-    e = { m: st.mtimeMs, buf, gz, type };
-    fileCache.set(file, e);
-  }
-  const useGz = !!e.gz && /\bgzip\b/.test(req.headers['accept-encoding'] || '');
-  const body = useGz ? e.gz : e.buf;
-  const h = {
-    'Content-Type': e.type + (e.type.startsWith('text/') ? '; charset=utf-8' : ''),
-    'Cache-Control': cacheControl, 'Content-Length': body.length, Vary: 'Accept-Encoding',
-  };
-  if (useGz) h['Content-Encoding'] = 'gzip';
-  res.writeHead(200, h);
-  res.end(req.method === 'HEAD' ? undefined : body);
-}
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json', '.ico': 'image/x-icon' };
 
 const server = http.createServer((req, res) => {
-  let pathname;
-  try { pathname = decodeURIComponent(new URL(req.url, 'http://x').pathname); }
-  catch { res.writeHead(400); return res.end(); }
-  if (pathname === '/health') { res.writeHead(200); return res.end('ok'); }
-  const done = (err) => { if (err && !res.headersSent) { res.writeHead(500); res.end(); } };
-  if (VENDOR[pathname]) return serveFile(req, res, VENDOR[pathname], 'public, max-age=86400').catch(done);
-  const p = path.normalize(path.join(PUB, pathname === '/' ? 'index.html' : pathname));
-  if (!p.startsWith(PUB + path.sep)) { res.writeHead(403); return res.end(); }
-  serveFile(req, res, p, 'no-cache').catch(done);
+  const u = new URL(req.url, 'http://x');
+  if (u.pathname === '/health') { res.writeHead(200); return res.end('ok'); }
+  const p = path.normalize(path.join(PUB, u.pathname === '/' ? 'index.html' : u.pathname));
+  if (!p.startsWith(PUB)) { res.writeHead(403); return res.end(); }
+  fs.readFile(p, (err, data) => {
+    if (err) { res.writeHead(404); return res.end('Not found'); }
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' });
+    res.end(data);
+  });
 });
 
 const wss = new WebSocketServer({ server, maxPayload: 4096 });
@@ -64,49 +31,38 @@ const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const norm = (v) => { const l = Math.hypot(...v) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
 const lerp3 = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
-const send = (ws, o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
+const send = (ws, o) => { if (ws.readyState === 1) ws.send(JSON.stringify(o)); };
 const mkW = (id) => ({ id, mag: WEAPONS[id].mag, reserve: WEAPONS[id].reserve });
 const COLORS = ['#ff5252', '#40c4ff', '#69f0ae', '#ffd740', '#e040fb', '#ff9100', '#18ffff', '#eeff41', '#ff80ab', '#b388ff', '#a1887f', '#ffffff'];
 const PICK_RESPAWN = { weapon: 20000, health: 30000, shield: 60000, grenade: 25000 };
 let nextId = 1;
 
 class Room {
-  constructor(code, opts = {}) {
+  constructor(code) {
     this.code = code; this.players = new Map(); this.projectiles = []; this.events = [];
-    this.nextProj = 1; this.nextPick = 1000; this.solo = !!opts.solo;
+    this.nextProj = 1; this.nextPick = 1000;
     this.resetPickups();
     this.state = 'playing'; this.matchEnd = now() + CFG.MATCH_MS; this.endAt = 0;
-    for (let i = 0; i < (opts.bots || 0); i++) this.addBot(opts.diff);
   }
   resetPickups() {
     this.pickups = MAP.pickups.map((n, i) => ({ id: i, type: n.type, w: n.type === 'weapon' ? rnd(WEAPON_POOL) : null, pos: n.pos, active: true, respawnAt: 0 }));
   }
-  humans() { let n = 0; for (const p of this.players.values()) if (!p.bot) n++; return n; }
-  add(ws, name, bot = false, diff = 'normal') {
+  add(ws, name) {
     const used = new Set([...this.players.values()].map((p) => p.color));
     const p = {
-      id: nextId++, ws, name, bot, color: COLORS.find((c) => !used.has(c)) || COLORS[0],
+      id: nextId++, ws, name, color: COLORS.find((c) => !used.has(c)) || COLORS[0],
       pos: [0, 0, 0], vel: [0, 0, 0], onGround: false, fuel: 1, groundTime: 0,
-      hoverArmed: false, pj: false, air: 0, thrusting: false,
       yaw: 0, pitch: 0, aimYaw: 0, aimPitch: 0, jet: false,
       hp: 100, armor: 0, alive: false, respawnAt: 0, protectUntil: 0,
       weapons: [null, null], slot: 0, nextFire: 0, reloadUntil: 0, grenades: 3, nextNade: 0, nextMelee: 0,
       kills: 0, deaths: 0, lastDamage: 0, lastSeq: 0, budget: 0.1, lastInputAt: now(), history: [], priv: [],
-      ai: bot ? newBotState(diff) : null,
     };
     this.players.set(p.id, p);
     this.spawn(p);
-    if (!bot) {
-      send(ws, { type: 'welcome', id: p.id, room: this.code, solo: this.solo });
-      this.events.push({ e: 'msg', text: `${name} joined` });
-    }
+    send(ws, { type: 'welcome', id: p.id, room: this.code });
+    this.events.push({ e: 'msg', text: `${name} joined` });
     this.roster();
     return p;
-  }
-  addBot(diff) {
-    const taken = new Set([...this.players.values()].map((p) => p.name));
-    const pool = BOT_NAMES.filter((n) => !taken.has(`${n} [BOT]`));
-    return this.add(null, `${rnd(pool.length ? pool : BOT_NAMES)} [BOT]`, true, diff);
   }
   remove(p) {
     this.players.delete(p.id);
@@ -114,7 +70,7 @@ class Room {
     this.roster();
   }
   roster() {
-    const list = [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, kills: p.kills, deaths: p.deaths, bot: p.bot }));
+    const list = [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, kills: p.kills, deaths: p.deaths }));
     for (const p of this.players.values()) send(p.ws, { type: 'r', list });
   }
   spawn(p) {
@@ -128,13 +84,11 @@ class Room {
     }
     Object.assign(p, {
       pos: [...best], vel: [0, 0, 0], onGround: false, hp: 100, armor: 0, alive: true, fuel: 1, groundTime: 0,
-      hoverArmed: false, pj: false, air: 0, thrusting: false, jet: false,
       weapons: [mkW('pistol'), null], slot: 0, grenades: 3, reloadUntil: 0, nextFire: 0,
       protectUntil: now() + CFG.PROTECT_MS, history: [],
     });
     p.yaw = p.aimYaw = Math.atan2(best[0], best[2]);  // face map centre
-    if (p.ai) Object.assign(p.ai, { yaw: p.yaw, pitch: 0, goal: null, target: null, lastKnown: null, unstick: 0, stuckN: 0, chkPos: null });
-    else p.priv.push({ e: 'spawn', yaw: p.yaw });
+    p.priv.push({ e: 'spawn', yaw: p.yaw });
   }
 
   onMsg(p, m) {
@@ -157,8 +111,8 @@ class Room {
     p.aimPitch = clamp(+m.ap || 0, -1.55, 1.55);
     if (!p.alive || this.state !== 'playing') return;
     const dt = Math.min(CFG.INPUT_DT, p.budget); p.budget -= dt;
-    stepPlayer(p, { mx: +m.mx || 0, mz: +m.mz || 0, yaw: p.yaw, jump: !!m.j, jet: !!m.jet, sprint: !!m.sp, down: !!m.dn }, dt);
-    p.jet = p.thrusting;
+    p.jet = !!m.jet && p.fuel > 0;
+    stepPlayer(p, { mx: +m.mx || 0, mz: +m.mz || 0, yaw: p.yaw, jump: !!m.j, jet: !!m.jet, sprint: !!m.sp }, dt);
     if (m.f) this.tryFire(p, clamp(+m.t || t, t - CFG.MAX_REWIND_MS, t), !!m.z);
   }
   onAction(p, a) {
@@ -206,7 +160,7 @@ class Room {
       }
     }
     const hit = [o[0] + d[0] * best, o[1] + d[1] * best, o[2] + d[2] * best];
-    this.events.push({ e: 'shot', id: p.id, o: o.map(r2), h: hit.map(r2), pl: target ? 1 : 0 });
+    this.events.push({ e: 'shot', id: p.id, o: o.map(r2), h: hit.map(r2) });
     if (target) this.damage(target, W.dmg * (head ? CFG.HEADSHOT : 1), p, wid, head);
   }
   rewind(q, t) {  // lag compensation: where was q at time t?
@@ -253,7 +207,7 @@ class Room {
     if (q.hp <= 0) this.kill(q, att, wid, head);
   }
   kill(q, att, wid, head) {
-    q.alive = false; q.hp = 0; q.deaths++; q.respawnAt = now() + CFG.RESPAWN_MS; q.jet = false; q.thrusting = false;
+    q.alive = false; q.hp = 0; q.deaths++; q.respawnAt = now() + CFG.RESPAWN_MS; q.jet = false;
     const cw = q.weapons[q.slot];
     if (cw && cw.id !== 'pistol') this.drop(q.pos, cw);
     if (att && att !== q) att.kills++; else if (q.kills > 0) q.kills--;
@@ -386,7 +340,6 @@ class Room {
         if (w) { const take = Math.min(WEAPONS[w.id].mag - w.mag, w.reserve); w.mag += take; w.reserve -= take; }
         p.reloadUntil = 0;
       }
-      if (p.bot) { botThink(this, p, dt, t); if (!p.alive) continue; }
       if (t - p.lastDamage > CFG.REGEN_DELAY && p.hp < 100) p.hp = Math.min(100, p.hp + CFG.REGEN_RATE * dt);
       if (p.pos[1] < -10) { p.protectUntil = 0; this.damage(p, 999, null, 'void'); continue; }
       this.pickupCheck(p);
@@ -410,10 +363,10 @@ class Room {
     const ev = this.events; this.events = [];
     const time = Math.max(0, (this.state === 'playing' ? this.matchEnd : this.endAt) - t);
     for (const p of this.players.values()) {
-      if (p.ws) send(p.ws, {
+      send(p.ws, {
         type: 's', t, ack: p.lastSeq, st: this.state, time, ps, pr, pk, ev, pv: p.priv,
-        me: { pos: p.pos, vel: p.vel, og: p.onGround, fuel: p.fuel, gt: p.groundTime, ha: p.hoverArmed, pj: p.pj, air: p.air, th: p.thrusting,
-              hp: Math.ceil(p.hp), ar: p.armor, alive: p.alive, rs: Math.max(0, p.respawnAt - t), w: p.weapons, slot: p.slot,
+        me: { pos: p.pos, vel: p.vel, og: p.onGround, fuel: p.fuel, gt: p.groundTime, hp: Math.ceil(p.hp), ar: p.armor,
+              alive: p.alive, rs: Math.max(0, p.respawnAt - t), w: p.weapons, slot: p.slot,
               rl: p.reloadUntil ? Math.max(0, p.reloadUntil - t) : 0, gn: p.grenades, prot: t < p.protectUntil },
       });
       p.priv = [];
@@ -425,24 +378,12 @@ wss.on('connection', (ws) => {
   let room = null, player = null;
   ws.on('message', (raw) => {
     let m; try { m = JSON.parse(raw); } catch { return; }
-    if (!m || typeof m !== 'object') return;
     if (!player) {
       if (m.type !== 'join') return;
       const name = String(m.name || 'Player').replace(/[<>&"']/g, '').slice(0, 16).trim() || 'Player';
-      if (m.solo) {   // private solo match with bots
-        if (rooms.size >= MAX_ROOMS) return send(ws, { type: 'full' });
-        let code; do { code = 'S' + Math.random().toString(36).slice(2, 7).toUpperCase(); } while (rooms.has(code));
-        const bots = clamp(Math.floor(+m.bots || 0), 1, CFG.MAX_PLAYERS - 1);
-        room = new Room(code, { solo: true, bots, diff: DIFFS[m.diff] ? m.diff : 'normal' });
-        rooms.set(code, room);
-      } else {
-        const code = String(m.room || 'PUBLIC').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'PUBLIC';
-        room = rooms.get(code);
-        if (!room) {
-          if (rooms.size >= MAX_ROOMS) return send(ws, { type: 'full' });
-          room = new Room(code); rooms.set(code, room);
-        }
-      }
+      const code = String(m.room || 'PUBLIC').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'PUBLIC';
+      room = rooms.get(code);
+      if (!room) { room = new Room(code); rooms.set(code, room); }
       if (room.players.size >= CFG.MAX_PLAYERS) return send(ws, { type: 'full' });
       player = room.add(ws, name);
       return;
@@ -451,9 +392,8 @@ wss.on('connection', (ws) => {
   });
   ws.on('close', () => {
     if (room && player) room.remove(player);
-    if (room && room.humans() === 0) rooms.delete(room.code);
+    if (room && room.players.size === 0) rooms.delete(room.code);
   });
-  ws.on('error', () => {});
 });
 
 let last = now();
