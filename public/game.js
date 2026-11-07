@@ -52,7 +52,7 @@ let myMesh = null, showcase = null, inMenu = true, booted = false;
 // ---------- loading screen
 const TIPS = [
   'Jump off a high ledge — your jetpack fires on its own and slows the fall.',
-  'Phone: push the left stick to the top edge to fly, right stick past halfway to shoot.',
+  'Hold JET to climb, hold ▼ / C to drop back down.',
   'Headshots deal 80% extra damage.',
   'Sneak up behind someone: a melee backstab is an instant kill.',
   'Grab a weapon pickup and press E to swap for it.',
@@ -667,13 +667,6 @@ initControls({
   toggleBoard: () => { boardOpen = !boardOpen; renderBoard(); $('board').style.display = boardOpen ? 'block' : 'none'; },
   active: () => connected && !paused && !inMenu && !!me,
   fuel: () => local.fuel, slot: () => me?.slot ?? 0,
-  nearPickup: () => {
-    if (!me?.alive) return false;
-    for (const m of pickMeshes.values())
-      if (m.userData.type === 'weapon' && !me.w.some((x) => x && x.id === m.userData.w) &&
-          Math.hypot(m.position.x - local.pos[0], m.userData.baseY - 0.5 - local.pos[1], m.position.z - local.pos[2]) < 2.2) return true;
-    return false;
-  },
   weapons: () => (me?.w || []).map((x) => (x ? { name: WEAPONS[x.id].name } : null)),
 });
 
@@ -909,7 +902,7 @@ function leaveMatch() {
 // ---------- menu
 function showScreen(id) {
   for (const s of document.querySelectorAll('#menu .screen')) s.classList.toggle('on', s.id === 's-' + id);
-  if (id === 'ctl') { const sync = () => { const mm = settings.scheme === 'mm'; for (const e of document.querySelectorAll('#s-ctl .cust')) e.classList.toggle('dim', mm); $('mmnote').style.display = mm ? 'block' : 'none'; }; bindSettingsUI($('s-ctl'), sync); sync(); }
+  if (id === 'ctl') bindSettingsUI($('s-ctl'));
   if (id === 'set') $('sens').value = settings.sens;
 }
 function playerName() {

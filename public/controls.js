@@ -7,7 +7,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // ---------- control settings (persisted, prefix c_)
 export const CDEF = {
-  scheme: 'mm', layout_mm: null, aim: 'swipe', stickfire: true, joy: 'float', dead: 0.12, zsens: 0.45, gsens: 1,
+  aim: 'stick', stickfire: true, joy: 'float', dead: 0.12, zsens: 0.45, gsens: 1,
   assist: 'low', gyro: false, autofire: false, autopick: false, autoreload: false,
   vibe: true, left: false, opa: 0.8, layout: null,
 };
@@ -32,27 +32,13 @@ export const PRESETS = {
     move: [0.15, 0.74, 1], aim: [0.6, 0.66, 1],
   },
 };
-PRESETS.mm = {      // Mini Militia: fixed sticks in the bottom corners, action buttons arced above the right stick
-  move: [0.13, 0.73, 1.05], aim: [0.86, 0.72, 1.1],
-  reload: [0.95, 0.37, 0.95], swap: [0.85, 0.36, 1], melee: [0.74, 0.43, 1], nade: [0.68, 0.63, 1], zoom: [0.66, 0.86, 0.95],
-  pickup: [0.6, 0.42, 1.05], board: [0.159, 0.082, 1],
-  fire: [0.918, 0.618, 1], jet: [0.8, 0.833, 1], down: [0.932, 0.854, 1],
-};
 const IDS = Object.keys(BASE);
-const MMHIDE = new Set(['fire', 'jet', 'down']);
-const isMM = () => S.scheme === 'mm';
-const aimMode = () => (isMM() ? 'stick' : S.aim);
-const joyMode = () => (isMM() ? 'fixed' : S.joy);
-const basePreset = () => (isMM() ? PRESETS.mm : PRESETS.classic);
-const savedLayout = () => (isMM() ? S.layout_mm : S.layout);
-let nearPick = false;
 const BTN_IDS = IDS.filter((i) => i !== 'move' && i !== 'aim');
 
 let api, S, T;                       // game API, settings object, touch state
 let layout = null;
 const uiScale = () => clamp(innerHeight / 390, 0.85, 1.35);
-function fullLayout(l) { const b = basePreset(), o = {}; for (const id of IDS) o[id] = [...((l && l[id]) || b[id])]; return o; }
-function hiddenBtn(id) { return (isMM() && MMHIDE.has(id)) || (id === 'reload' && S.autoreload) || (id === 'pickup' && (S.autopick || (isMM() && !nearPick))); }
+function fullLayout(l) { const o = {}; for (const id of IDS) o[id] = [...((l && l[id]) || PRESETS.classic[id])]; return o; }
 // screen position of a control (mirrors x for left-handed, except the scoreboard button)
 function place(id, l = layout) {
   const [fx, fy, sc] = l[id], x = S.left && id !== 'board' ? 1 - fx : fx;
@@ -61,27 +47,26 @@ function place(id, l = layout) {
 
 export function applyLayout() {
   if (!api) return;
-  layout = fullLayout(savedLayout());
+  layout = fullLayout(S.layout);
   $('touch').style.setProperty('--topa', S.opa);
   document.body.classList.toggle('lefty', !!S.left && api.isTouch);
-  document.body.classList.toggle('mm', isMM());
   for (const b of document.querySelectorAll('#touch .tbtn')) {
     const id = b.dataset.id, p = place(id);
     Object.assign(b.style, { left: p.x - p.size / 2 + 'px', top: p.y - p.size / 2 + 'px', width: p.size + 'px', height: p.size + 'px', fontSize: Math.round(p.size * (BASE[id] > 60 ? 0.21 : 0.33)) + 'px' });
-    b.style.display = hiddenBtn(id) ? 'none' : 'flex';
+    b.style.display = (id === 'reload' && S.autoreload) || (id === 'pickup' && S.autopick) ? 'none' : 'flex';
   }
   for (const k of ['move', 'aim']) {
     const el = $(k === 'move' ? 'mjoy' : 'ajoy'), p = place(k);
     el.style.width = el.style.height = p.size + 'px';
     el.dataset.fx = p.x; el.dataset.fy = p.y;
-    const fixedVisible = joyMode() === 'fixed' && (k === 'move' || aimMode() === 'stick');
+    const fixedVisible = S.joy === 'fixed' && (k === 'move' || S.aim === 'stick');
     if (!el.classList.contains('act')) { setJoy(el, p.x, p.y, 0, 0); el.style.display = fixedVisible ? 'block' : 'none'; }
     el.classList.toggle('fixed', fixedVisible);
   }
 }
 function setJoy(el, x, y, dx, dy) {
   el.style.left = x + 'px'; el.style.top = y + 'px';
-  el.querySelector('.knob').style.transform = `translate(-50%,-50%) translate(${dx}px,${dy}px)`;
+  el.firstElementChild.style.transform = `translate(-50%,-50%) translate(${dx}px,${dy}px)`;
 }
 
 // ---------- vibration
@@ -126,15 +111,15 @@ function canvasStart(e) {
     const x = t.clientX, y = t.clientY;
     const moveSide = S.left ? x > innerWidth * 0.6 : x < innerWidth * 0.4;
     if (moveSide && mv.id === null) {
-      const el = $('mjoy'), fixed = joyMode() === 'fixed';
+      const el = $('mjoy'), fixed = S.joy === 'fixed';
       mv.id = t.identifier; mv.ox = fixed ? +el.dataset.fx : x; mv.oy = fixed ? +el.dataset.fy : y;
       el.classList.add('act'); el.style.display = 'block'; setJoy(el, mv.ox, mv.oy, 0, 0);
       moveStick(x, y);
     } else if (!moveSide && lk.id === null) {
       lk.id = t.identifier; lk.lx = x; lk.ly = y; lk.ax = lk.ay = 0;
       const el = $('ajoy');
-      if (aimMode() === 'stick') {
-        const fixed = joyMode() === 'fixed', fx = +el.dataset.fx, fy = +el.dataset.fy;
+      if (S.aim === 'stick') {
+        const fixed = S.joy === 'fixed', fx = +el.dataset.fx, fy = +el.dataset.fy;
         const nearFixed = Math.hypot(x - fx, y - fy) < parseFloat(el.style.width) * 0.9;
         if (!fixed || nearFixed) {
           lk.mode = 'stick'; lk.ox = fixed ? fx : x; lk.oy = fixed ? fy : y;
@@ -152,12 +137,6 @@ function moveStick(x, y) {
   const L = Math.hypot(dx, dy); if (L > 1) { dx /= L; dy /= L; }
   const Lc = Math.min(1, L), k = Lc < S.dead ? 0 : (Lc - S.dead) / (1 - S.dead) / (Lc || 1);
   T.mx = dx * k; T.mz = -dy * k; T.sp = Lc > 0.95;
-  if (isMM()) {
-    const up = Lc > 0.8 && dy < 0 && Math.abs(dx) < -dy * 1.2, dn = Lc > 0.8 && dy > 0 && Math.abs(dx) < dy * 1.2;
-    if (up && !T.jet) buzz('tap');
-    T.jet = up ? 1 : 0; T.down = dn; T.sp = false;
-    el.classList.toggle('jetting', up); el.classList.toggle('diving', dn);
-  }
   setJoy(el, mv.ox, mv.oy, dx * R * 0.62, dy * R * 0.62);
 }
 function aimStick(x, y) {
@@ -165,7 +144,7 @@ function aimStick(x, y) {
   let dx = (x - lk.ox) / R, dy = (y - lk.oy) / R;
   const L = Math.hypot(dx, dy); if (L > 1) { dx /= L; dy /= L; }
   lk.ax = dx; lk.ay = dy;
-  T.sfire = (isMM() || S.stickfire) && L > (isMM() ? 0.5 : 0.9);
+  T.sfire = S.stickfire && L > 0.9;
   el.classList.toggle('firing', T.sfire);
   setJoy(el, lk.ox, lk.oy, dx * R * 0.62, dy * R * 0.62);
 }
@@ -174,7 +153,7 @@ function canvasMove(e) {
   for (const t of e.changedTouches) {
     if (t.identifier === mv.id) moveStick(t.clientX, t.clientY);
     else if (t.identifier === lk.id) {
-      if (lk.mode === 'stick') { swipe(t.clientX - lk.lx, t.clientY - lk.ly); lk.lx = t.clientX; lk.ly = t.clientY; aimStick(t.clientX, t.clientY); }
+      if (lk.mode === 'stick') aimStick(t.clientX, t.clientY);
       else { swipe(t.clientX - lk.lx, t.clientY - lk.ly); lk.lx = t.clientX; lk.ly = t.clientY; }
     }
   }
@@ -183,14 +162,13 @@ function canvasEnd(e) {
   for (const t of e.changedTouches) {
     if (t.identifier === mv.id) {
       mv.id = null; T.mx = T.mz = 0; T.sp = false;
-      const el = $('mjoy'); el.classList.remove('act', 'jetting', 'diving');
-      if (isMM()) { T.jet = 0; T.down = false; }
-      setJoy(el, +el.dataset.fx, +el.dataset.fy, 0, 0); el.style.display = joyMode() === 'fixed' ? 'block' : 'none';
+      const el = $('mjoy'); el.classList.remove('act');
+      setJoy(el, +el.dataset.fx, +el.dataset.fy, 0, 0); el.style.display = S.joy === 'fixed' ? 'block' : 'none';
     }
     if (t.identifier === lk.id) {
       lk.id = null; lk.ax = lk.ay = 0; T.sfire = false;
       const el = $('ajoy'); el.classList.remove('act', 'firing');
-      setJoy(el, +el.dataset.fx, +el.dataset.fy, 0, 0); el.style.display = joyMode() === 'fixed' && aimMode() === 'stick' ? 'block' : 'none';
+      setJoy(el, +el.dataset.fx, +el.dataset.fy, 0, 0); el.style.display = S.joy === 'fixed' && S.aim === 'stick' ? 'block' : 'none';
     }
   }
   refreshAiming();
@@ -287,7 +265,7 @@ export function resetTouch() {
   mv.id = lk.id = fireTouch = null; lk.ax = lk.ay = 0;
   if (wheel) closeWheel(false);
   for (const b of document.querySelectorAll('#touch .tbtn')) b.classList.remove('down', 'lever', 'dive');
-  for (const id of ['mjoy', 'ajoy']) $(id)?.classList.remove('act', 'firing', 'jetting', 'diving');
+  for (const id of ['mjoy', 'ajoy']) $(id)?.classList.remove('act', 'firing');
   applyLayout();
 }
 
@@ -297,21 +275,16 @@ export function updateControls(dt) {
   if (!api?.isTouch) return;
   if (lk.id !== null && lk.mode === 'stick' && api.active()) {
     const L = Math.hypot(lk.ax, lk.ay);
-    if (L > 0.45) {                      // past the inner zone: keep turning while held
-      const c = ((Math.min(1, L) - 0.45) / 0.55) / L, k = S.sens * (api.isZoom() ? S.zsens : 1) * api.lookScale() * dt;
-      api.look(-lk.ax * c * 3.2 * k, -lk.ay * c * 1.8 * k);
+    if (L > 0.06) {
+      const c = Math.pow(Math.min(1, L), 1.6) / L, k = S.sens * (api.isZoom() ? S.zsens : 1) * api.lookScale() * dt;
+      api.look(-lk.ax * c * 2.8 * k, -lk.ay * c * 1.8 * k);
     }
   }
   const f = Math.round(api.fuel() * 100) / 100;
   if (f !== lastFuel) {
     lastFuel = f;
-    for (const ring of document.querySelectorAll('#touch .ring')) { ring.style.setProperty('--f', f); ring.style.setProperty('--fc', f < 0.2 ? '#ff5a4a' : '#4cc8ff'); }
-  }
-  const np = !!api.nearPickup();
-  if (np !== nearPick) {
-    nearPick = np;
-    const b = document.querySelector('#touch [data-id=pickup]');
-    if (b) { b.style.display = hiddenBtn('pickup') ? 'none' : 'flex'; if (np && isMM() && !S.autopick) buzz('tap'); }
+    const ring = document.querySelector('#touch [data-id=jet] .ring');
+    if (ring) { ring.style.setProperty('--f', f); ring.style.setProperty('--fc', f < 0.2 ? '#ff5a4a' : '#4cc8ff'); }
   }
 }
 
@@ -336,13 +309,13 @@ export function bindSettingsUI(root, onChange) {
     }
   }
 }
-function set(k, v) { S[k] = v; api.store.set(k === 'sens' ? 'sens' : 'c_' + k, v); if (['scheme', 'joy', 'aim', 'left', 'opa', 'autopick', 'autoreload'].includes(k)) applyLayout(); }
+function set(k, v) { S[k] = v; api.store.set(k === 'sens' ? 'sens' : 'c_' + k, v); if (['joy', 'aim', 'left', 'opa', 'autopick', 'autoreload'].includes(k)) applyLayout(); }
 
 // ---------- layout editor
 let ed = null;
 export function openEditor() {
   const root = $('ctledit');
-  ed = { l: fullLayout(savedLayout()), sel: isMM() ? 'aim' : 'fire', opa: S.opa, drag: null };
+  ed = { l: fullLayout(S.layout), sel: 'fire', opa: S.opa, drag: null };
   const area = $('edarea'); area.innerHTML = '';
   for (const id of IDS) {
     const d = document.createElement('div');
@@ -366,12 +339,11 @@ export function openEditor() {
   $('edsize').oninput = (e) => { ed.l[ed.sel][2] = +e.target.value; drawEditor(); };
   $('edopa').value = ed.opa; $('edopa').oninput = (e) => { ed.opa = +e.target.value; drawEditor(); };
   for (const b of root.querySelectorAll('[data-preset]')) b.onclick = () => { ed.l = fullLayout(PRESETS[b.dataset.preset]); api.sfx('ui'); select(ed.sel); };
-  $('edreset').onclick = () => { ed.l = fullLayout(basePreset()); ed.opa = CDEF.opa; $('edopa').value = ed.opa; api.sfx('ui'); select(ed.sel); };
+  $('edreset').onclick = () => { ed.l = fullLayout(PRESETS.classic); ed.opa = CDEF.opa; $('edopa').value = ed.opa; api.sfx('ui'); select(ed.sel); };
   $('edcancel').onclick = () => closeEditor(false);
   $('eddone').onclick = () => closeEditor(true);
-  for (const b of root.querySelectorAll('[data-preset]')) b.style.display = (b.dataset.preset === 'mm') === isMM() ? '' : 'none';
   root.style.display = 'block'; root.querySelector('.edhint').style.display = '';
-  select(ed.sel);
+  select('fire');
 }
 function select(id) {
   ed.sel = id; $('edsel').textContent = LABEL[id] === '▼' ? 'DIVE ▼' : LABEL[id];
@@ -381,14 +353,14 @@ function select(id) {
 function drawEditor() {
   for (const d of $('edarea').children) {
     const id = d.dataset.id, p = place(id, ed.l);
-    const hidden = (isMM() && MMHIDE.has(id)) || (id === 'reload' && S.autoreload) || (id === 'pickup' && S.autopick);
+    const hidden = (id === 'reload' && S.autoreload) || (id === 'pickup' && S.autopick);
     Object.assign(d.style, { left: p.x - p.size / 2 + 'px', top: p.y - p.size / 2 + 'px', width: p.size + 'px', height: p.size + 'px',
       fontSize: Math.round(p.size * (BASE[id] > 60 ? 0.2 : 0.32)) + 'px', opacity: id === 'move' || id === 'aim' ? 1 : ed.opa });
     d.classList.toggle('sel', id === ed.sel); d.classList.toggle('off', hidden);
   }
 }
 function closeEditor(save) {
-  if (save) { const key = isMM() ? 'layout_mm' : 'layout'; S[key] = ed.l; S.opa = ed.opa; api.store.set('c_' + key, ed.l); api.store.set('c_opa', ed.opa); api.toast('Controls layout saved'); }
+  if (save) { S.layout = ed.l; S.opa = ed.opa; api.store.set('c_layout', ed.l); api.store.set('c_opa', ed.opa); api.toast('Controls layout saved'); }
   $('ctledit').style.display = 'none'; ed = null; applyLayout(); api.sfx('ui');
 }
 
