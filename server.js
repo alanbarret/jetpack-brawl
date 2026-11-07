@@ -158,7 +158,7 @@ class Room {
     p.aimPitch = clamp(+m.ap || 0, -1.55, 1.55);
     if (!p.alive || this.state !== 'playing') return;
     const dt = Math.min(CFG.INPUT_DT, p.budget); p.budget -= dt;
-    stepPlayer(p, { mx: +m.mx || 0, mz: +m.mz || 0, yaw: p.yaw, jump: !!m.j, jet: !!m.jet, sprint: !!m.sp, down: !!m.dn }, dt, this.map);
+    stepPlayer(p, { mx: +m.mx || 0, mz: +m.mz || 0, yaw: p.yaw, jump: !!m.j, jet: m.jet === true ? 1 : clamp(+m.jet || 0, 0, 1), sprint: !!m.sp, down: !!m.dn }, dt, this.map);
     p.jet = p.thrusting;
     if (m.f) this.tryFire(p, clamp(+m.t || t, t - CFG.MAX_REWIND_MS, t), !!m.z);
   }

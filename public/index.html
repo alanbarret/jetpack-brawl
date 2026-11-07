@@ -163,14 +163,45 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 #pause h2{font:400 30px var(--head);letter-spacing:3px;color:var(--acc);text-align:center;text-transform:uppercase}
 
 /* ---------- touch controls ---------- */
-#touch{display:none}
-.tbtn{position:fixed;width:54px;height:54px;border-radius:50%;background:#ffffff30;border:2px solid #ffffff90;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#fff;text-shadow:0 1px 3px #000;pointer-events:auto;z-index:10}
-.tbtn.big{width:78px;height:78px}.tbtn.down{background:#ffb43aa8;border-color:#ffd88a}
-#joy{position:fixed;width:110px;height:110px;margin:-55px 0 0 -55px;border-radius:50%;background:#ffffff22;border:2px solid #ffffff66;display:none;pointer-events:none}
-#knob{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;background:#ffffff88}
+#touch{display:none;--topa:.8}
+.tbtn{position:fixed;border-radius:50%;background:rgba(255,255,255,.2);border:2px solid rgba(255,255,255,.75);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;text-shadow:0 1px 3px #000;pointer-events:auto;z-index:10;opacity:var(--topa);transition:transform .07s,background .07s;user-select:none;-webkit-user-select:none;touch-action:none}
+.tbtn.down{background:rgba(255,180,58,.7);border-color:#ffd88a;transform:scale(.9)}
+.tbtn .ring{position:absolute;inset:-8px;border-radius:50%;pointer-events:none;background:conic-gradient(var(--fc,#4cc8ff) calc(var(--f,1)*360deg),rgba(255,255,255,.18) 0);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 6px),#000 calc(100% - 5px));mask:radial-gradient(farthest-side,transparent calc(100% - 6px),#000 calc(100% - 5px))}
+.tbtn .lev{position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px;border-radius:50%;background:#fff;box-shadow:0 0 6px #000;opacity:0;pointer-events:none}
+.tbtn.lever .lev{opacity:.95}.tbtn.lever span{opacity:.35}
+.tbtn.dive{background:rgba(255,90,74,.7);border-color:#ffb0a6}.tbtn.dive span:after{content:' ▼'}
+.joy{position:fixed;transform:translate(-50%,-50%);border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.55);display:none;pointer-events:none;opacity:var(--topa)}
+.joy .knob{position:absolute;left:50%;top:50%;width:42%;height:42%;transform:translate(-50%,-50%);border-radius:50%;background:rgba(255,255,255,.65);box-shadow:0 0 8px rgba(0,0,0,.4)}
+.joy.fixed:not(.act){opacity:calc(var(--topa)*.6)}
+.joy.aim{border-color:rgba(255,200,110,.8)}.joy.aim .knob{background:rgba(255,190,90,.85)}
+.joy.aim.firing{border-color:#ff7a6a}.joy.aim.firing .knob{background:#ff5a4a}
+#wheel{position:fixed;width:208px;height:208px;margin:-104px 0 0 -104px;border-radius:50%;background:rgba(10,14,9,.9);border:2px solid #ffd88a;display:none;z-index:30;pointer-events:none}
+#wheel .ws{position:absolute;width:92px;padding:6px 4px;text-align:center;font-weight:800;font-size:12px;letter-spacing:.5px;color:#fff;border-radius:7px;border:1px solid transparent}
+#wheel .ws b{color:var(--acc)}
+#wheel .ws.cur{border-color:#ffd88a}
+#wheel .ws.on{background:var(--acc);color:var(--accd)}#wheel .ws.on b{color:var(--accd)}
+#wheel [data-k=w0]{left:58px;top:12px}#wheel [data-k=w1]{left:58px;bottom:12px}
+#wheel [data-k=reload]{left:4px;top:88px;width:64px}#wheel [data-k=pickup]{right:4px;top:88px;width:64px}
+#wheel .wc{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:22px;color:#ffd88a}
+#ctledit{position:fixed;inset:0;z-index:60;display:none;background-color:#0d130b;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:40px 40px;touch-action:none}
+#edarea{position:absolute;inset:0}
+.eitem{position:absolute;border-radius:50%;background:rgba(255,255,255,.2);border:2px solid rgba(255,255,255,.8);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;text-shadow:0 1px 3px #000;cursor:grab;user-select:none;touch-action:none}
+.eitem.stick{border-style:dashed;background:rgba(255,255,255,.07);font-size:12px!important;letter-spacing:2px}
+.eitem.sel{border-color:var(--acc);box-shadow:0 0 0 3px rgba(255,180,58,.55)}
+.eitem.off{display:none}
+.edbar{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;background:rgba(10,14,9,.95);border:2px solid var(--line);border-radius:9px;padding:6px 8px;z-index:2;max-width:calc(100vw - 16px);flex-wrap:wrap;justify-content:center}
+.edbar.top{top:calc(6px + var(--sat))}.edbar.bot{bottom:calc(6px + var(--sab))}
+.edbar .seg{flex:none;padding:6px 10px;font-size:14px}
+.edbar input[type=range]{width:110px;height:24px}
+.edt{font-size:11px;font-weight:800;letter-spacing:1.5px;color:var(--ink)}.edt b{color:var(--acc)}
+.edhint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:13px;font-weight:700;color:var(--ink2);pointer-events:none;text-align:center}
+#s-ctl{justify-content:flex-start}
+#s-ctl .field{padding:7px 12px}
+.sub{font-size:11px;font-weight:600;letter-spacing:.2px;text-transform:none;color:var(--ink2);display:block;margin-top:2px}
 @media (pointer:coarse){
   #mm{width:96px;height:96px}
   .bars{width:132px;bottom:auto;top:calc(112px + var(--sat))}
+  body.lefty .bars{left:auto;right:calc(16px + var(--sar));top:calc(116px + var(--sat))}
   #feed{top:calc(68px + var(--sat));left:50%;right:auto;transform:translateX(-50%);text-align:center;font-size:11px;white-space:nowrap}
   #ammo{bottom:auto;top:calc(8px + var(--sat));right:calc(58px + var(--sar));font-size:22px;display:flex;align-items:baseline;gap:8px}
   #ammo span{display:inline;font-size:12px}
@@ -249,7 +280,31 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
     <div class="lbl2">AIM SENSITIVITY</div><input type="range" id="sens" min="0.4" max="2.2" step="0.05">
     <div class="lbl2">VOLUME</div><input type="range" id="vol" min="0" max="1" step="0.05">
     <div class="field"><span>Shadows</span><div class="tog" id="shadows"></div></div>
+    <button class="mbtn" data-go="ctl"><span class="ico">🎮</span><span>Touch controls<small>Joysticks, aim assist, layout, vibration</small></span></button>
     <button class="mbtn ghost" data-go="main">← Back</button>
+  </div>
+  <div class="screen" id="s-ctl">
+    <h2>Touch controls</h2>
+    <button class="mbtn primary" id="editlayout"><span class="ico">✥</span><span>Edit button layout<small>Move, resize, opacity, presets</small></span></button>
+    <div class="lbl2">RIGHT SIDE OF SCREEN</div>
+    <div class="segs" data-set="aim"><button class="seg" data-v="stick">Aim stick</button><button class="seg" data-v="swipe">Swipe to look</button></div>
+    <div class="field"><span>Fire at stick edge<span class="sub">Push the aim stick all the way to shoot</span></span><div class="tog" data-set="stickfire"></div></div>
+    <div class="lbl2">JOYSTICKS</div>
+    <div class="segs" data-set="joy"><button class="seg" data-v="float">Floating</button><button class="seg" data-v="fixed">Fixed</button></div>
+    <div class="lbl2">AIM ASSIST</div>
+    <div class="segs" data-set="assist"><button class="seg" data-v="off">Off</button><button class="seg" data-v="low">Low</button><button class="seg" data-v="high">High</button></div>
+    <div class="lbl2">LOOK SENSITIVITY</div><input type="range" data-set="sens" min="0.4" max="2.2" step="0.05">
+    <div class="lbl2">ZOOMED SENSITIVITY</div><input type="range" data-set="zsens" min="0.15" max="1" step="0.05">
+    <div class="lbl2">MOVE STICK DEAD-ZONE</div><input type="range" data-set="dead" min="0" max="0.4" step="0.02">
+    <div class="field"><span>Gyro aiming<span class="sub">Tilt the phone to fine-tune aim</span></span><div class="tog" data-set="gyro"></div></div>
+    <div class="lbl2">GYRO SENSITIVITY</div><input type="range" data-set="gsens" min="0.3" max="2.5" step="0.05">
+    <div class="field"><span>Auto-fire<span class="sub">Shoots when the crosshair is on an enemy</span></span><div class="tog" data-set="autofire"></div></div>
+    <div class="field"><span>Auto pick-up<span class="sub">Grabs better guns, hides the E button</span></span><div class="tog" data-set="autopick"></div></div>
+    <div class="field"><span>Auto reload<span class="sub">Reloads when low, hides the R button</span></span><div class="tog" data-set="autoreload"></div></div>
+    <div class="field"><span>Vibration</span><div class="tog" data-set="vibe"></div></div>
+    <div class="field"><span>Left-handed<span class="sub">Mirrors the whole layout</span></span><div class="tog" data-set="left"></div></div>
+    <div class="lbl2">BUTTON OPACITY</div><input type="range" data-set="opa" min="0.25" max="1" step="0.05">
+    <button class="mbtn ghost" data-go="set">← Back</button>
   </div>
 </div>
 
@@ -278,22 +333,40 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
     <div class="codebox" id="pcode"><span>ROOM <b id="pcodev"></b></span><button class="cbtn" id="pcopy">📋 COPY</button></div>
     <button class="mbtn primary" id="resume"><span class="ico">▶</span><span>Resume</span></button>
     <button class="mbtn" id="pfs"><span class="ico">⛶</span><span>Fullscreen</span></button>
+    <button class="mbtn" id="pedit"><span class="ico">✥</span><span>Edit controls</span></button>
     <button class="mbtn" id="leave"><span class="ico">🚪</span><span>Leave match</span></button>
   </div>
 </div>
 
 <div id="touch">
-  <div id="joy"><div id="knob"></div></div>
-  <div class="tbtn big" data-hold="fire" style="right:calc(30px + var(--sar));bottom:calc(110px + var(--sab))">FIRE</div>
-  <div class="tbtn big" data-hold="jet" style="right:calc(130px + var(--sar));bottom:calc(26px + var(--sab))">JET</div>
-  <div class="tbtn" data-hold="down" style="right:calc(30px + var(--sar));bottom:calc(30px + var(--sab))">▼</div>
-  <div class="tbtn" data-act="nade" style="right:calc(222px + var(--sar));bottom:calc(60px + var(--sab))">💣</div>
-  <div class="tbtn" data-act="melee" style="right:calc(150px + var(--sar));bottom:calc(120px + var(--sab))">🔪</div>
-  <div class="tbtn" data-act="reload" style="right:calc(30px + var(--sar));bottom:calc(198px + var(--sab))">R</div>
-  <div class="tbtn" data-act="swap" style="right:calc(98px + var(--sar));bottom:calc(206px + var(--sab))">⇄</div>
-  <div class="tbtn" data-act="pickup" style="right:calc(168px + var(--sar));bottom:calc(190px + var(--sab))">E</div>
-  <div class="tbtn" data-act="zoom" style="right:calc(236px + var(--sar));bottom:calc(128px + var(--sab))">🔍</div>
-  <div class="tbtn" data-act="board" style="left:calc(112px + var(--sal));top:calc(10px + var(--sat));width:44px;height:44px">☰</div>
+  <div id="mjoy" class="joy"><div class="knob"></div></div>
+  <div id="ajoy" class="joy aim"><div class="knob"></div></div>
+  <div class="tbtn" data-id="fire">FIRE</div>
+  <div class="tbtn" data-id="jet"><div class="ring"></div><div class="lev"></div><span>JET</span></div>
+  <div class="tbtn" data-id="down">▼</div>
+  <div class="tbtn" data-id="nade">💣</div>
+  <div class="tbtn" data-id="melee">🔪</div>
+  <div class="tbtn" data-id="reload">R</div>
+  <div class="tbtn" data-id="swap">⇄</div>
+  <div class="tbtn" data-id="pickup">E</div>
+  <div class="tbtn" data-id="zoom">🔍</div>
+  <div class="tbtn" data-id="board">☰</div>
+</div>
+<div id="wheel"><div class="ws" data-k="w0"></div><div class="ws" data-k="pickup">PICK UP</div><div class="ws" data-k="w1"></div><div class="ws" data-k="reload">RELOAD</div><div class="wc">⇄</div></div>
+
+<div id="ctledit">
+  <div id="edarea"></div>
+  <div class="edbar top">
+    <span class="edt">PRESETS</span>
+    <button class="seg" data-preset="classic">Classic</button><button class="seg" data-preset="thumbs">Thumbs</button><button class="seg" data-preset="claw">Claw</button>
+    <button class="seg" id="edreset">Reset</button>
+  </div>
+  <div class="edbar bot">
+    <span class="edt">SIZE · <b id="edsel">FIRE</b></span><input type="range" id="edsize" min="0.6" max="1.6" step="0.05">
+    <span class="edt">OPACITY</span><input type="range" id="edopa" min="0.25" max="1" step="0.05">
+    <button class="seg" id="edcancel">Cancel</button><button class="seg on" id="eddone">Save</button>
+  </div>
+  <div class="edhint">Drag any control to move it · tap one, then use SIZE</div>
 </div>
 
 <div id="conn"><div class="spin"></div><div id="connmsg">Connecting…</div><button class="mbtn" id="conncancel">Cancel</button></div>

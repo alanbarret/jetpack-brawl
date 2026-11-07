@@ -105,9 +105,12 @@ export function stepPlayer(s, inp, dt, map = MAP) {
   s.pj = !!inp.jump;
   if (inp.jump && s.onGround) s.vel[1] = CFG.JUMP;
   let thrusting = false;
-  if (inp.jet && s.fuel > 0 && !down) {
-    if (s.vel[1] < CFG.MAX_UP) s.vel[1] = Math.min(CFG.MAX_UP, s.vel[1] + CFG.JET * dt);
-    s.fuel = Math.max(0, s.fuel - CFG.FUEL_DRAIN * dt);
+  // jet strength: true/1 = full thrust; the touch lever sends 0.62..1 for finer height control
+  const jp = inp.jet === true ? 1 : Math.max(0, Math.min(1, +inp.jet || 0));
+  if (jp > 0 && s.fuel > 0 && !down) {
+    const top = CFG.MAX_UP * (0.55 + 0.45 * jp);
+    if (s.vel[1] < top) s.vel[1] = Math.min(top, s.vel[1] + CFG.JET * jp * dt);
+    s.fuel = Math.max(0, s.fuel - CFG.FUEL_DRAIN * jp * dt);
     s.groundTime = 0; thrusting = true; s.hoverArmed = false;
   }
   s.air = s.onGround ? 0 : (s.air || 0) + dt;

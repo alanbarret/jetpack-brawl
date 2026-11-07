@@ -1,6 +1,7 @@
 // public/game.js — Three.js client: loading, menu, rendering, input, prediction, interpolation, HUD
 import * as THREE from 'three';
-import { CFG, WEAPONS, MAP, MAPS, MAP_IDS, stepPlayer, aimDir, rayWorld, rayBox, hitboxes } from './shared.js';
+import { CFG, WEAPONS, MAP, MAPS, MAP_IDS, stepPlayer, aimDir, rayWorld, rayBox, hitboxes, inBox } from './shared.js';
+import { initControls, applyLayout, updateControls, resetTouch, bindSettingsUI, openEditor, buzz } from './controls.js';
 import { makeSoldier, setWeapon, animateSoldier, kickRecoil, flashMuzzle, swingMelee, muzzleWorld, setBlink, makeWeaponModel } from './models.js';
 
 // ---------- helpers
@@ -43,7 +44,8 @@ let yaw = 0, pitch = 0, aimYaw = 0, aimPitch = 0, aimTarget = [0, 0, -10];
 let seq = 0; const pending = [];
 let zoom = false, mouseDown = false, chatOpen = false, boardOpen = false, paused = false, lastWheel = 0;
 let shake = 0, hitT = 0, dmgT = 0, dmgDirT = 0, dmgAngle = 0, localNextFire = 0;
-const keys = {}; const touch = { mx: 0, mz: 0, fire: false, jet: false, down: false, sp: false };
+const keys = {}; const touch = { mx: 0, mz: 0, fire: false, sfire: false, jet: 0, down: false, sp: false, nade: false, aiming: false };
+let aimEnemy = null, aimEnemySince = 0, nextAuto = 0, autoPickBlock = 0, autoReloadBlock = 0, lastShotT = 0, prevFuel = 1;
 const roster = new Map(), remotes = new Map(), pickMeshes = new Map(), projMeshes = new Map(), fx = [];
 let myMesh = null, showcase = null, inMenu = true, booted = false;
 
@@ -293,6 +295,7 @@ function sfx(kind, vol = 1) {
     case 'pick': env(0.2, 0.15); tone(600, 1300, 0.15); break;
     case 'melee': env(0.3, 0.08); noise(0.08, 'highpass', 2500); break;
     case 'ui': env(0.15, 0.07); tone(700, 500, 0.07, 'square'); break;
+    case 'tap': env(0.07, 0.035); tone(1500, 1100, 0.035, 'square'); break;
   }
 }
 const sfxAt = (kind, p) => sfx(kind, Math.max(0, 1 - len(sub(p, local.pos)) / 70));
@@ -353,7 +356,7 @@ function onMessage(m) {
       myId = m.id; roomCode = m.room; soloMatch = !!m.solo; connected = true; inMenu = false;
       MAPC = MAPS[m.map] || MAP; loadMapVisuals(MAPC);
       hideConn(); $('menu').style.display = 'none'; $('hud').style.display = 'block';
-      if (isTouch) $('touch').style.display = 'block';
+      if (isTouch) { $('touch').style.display = 'block'; resetTouch(); }
       if (showcase) showcase.visible = false;
       $('room').textContent = (soloMatch ? 'Solo vs bots' : `Room ${m.room}`) + ' · ' + MAPC.name;
       if (!soloMatch) history.replaceState(null, '', `?room=${m.room}`);
@@ -423,7 +426,7 @@ function onSnapshot(s) {
   for (const [id, type, w, x, y, z] of s.pk) {
     pkSeen.add(id);
     if (!pickMeshes.has(id)) {
-      const m = makePickup(type, w); m.position.set(x, y + 0.5, z); m.userData.baseY = y + 0.5;
+      const m = makePickup(type, w); m.position.set(x, y + 0.5, z); m.userData.baseY = y + 0.5; m.userData.type = type; m.userData.w = w;
       scene.add(m); pickMeshes.set(id, m);
     }
   }
@@ -476,9 +479,9 @@ function handleEvent(e) {
   }
 }
 function handlePriv(e) {
-  if (e.e === 'hit') { $('hitm').className = e.kill ? 'kill' : e.head ? 'head' : ''; hitT = 0.15; sfx('hit'); }
+  if (e.e === 'hit') { $('hitm').className = e.kill ? 'kill' : e.head ? 'head' : ''; hitT = 0.15; sfx('hit'); buzz(e.kill ? 'kill' : e.head ? 'head' : 'hit'); }
   else if (e.e === 'dmg') {
-    dmgT = 0.5; sfx('hurt');
+    dmgT = 0.5; sfx('hurt'); buzz('dmg');
     if (e.from) { const dx = e.from[0] - local.pos[0], dz = e.from[1] - local.pos[2]; if (dx || dz) { dmgAngle = Math.atan2(-dx, -dz); dmgDirT = 1.2; } }
   } else if (e.e === 'spawn') { yaw = e.yaw; pitch = 0; }
   else if (e.e === 'pick') {
@@ -503,11 +506,12 @@ function cameraRig(pos) {
 }
 function computeAim() {
   const rig = cameraRig(local.pos);
-  let t = rayWorld(rig.cam, rig.fwd, 300, MAPC);
+  let t = rayWorld(rig.cam, rig.fwd, 300, MAPC), onR = null;
   for (const r of remotes.values()) {
     if (!r.alive || !r.rp) continue;
-    for (const hb of hitboxes(r.rp)) { const tt = rayBox(rig.cam, rig.fwd, hb.min, hb.max); if (tt < t) t = tt; }
+    for (const hb of hitboxes(r.rp)) { const tt = rayBox(rig.cam, rig.fwd, hb.min, hb.max); if (tt < t) { t = tt; onR = r; } }
   }
+  if (onR !== aimEnemy) { aimEnemy = onR; aimEnemySince = performance.now(); }
   aimTarget = add(rig.cam, mul(rig.fwd, t));
   const d = sub(aimTarget, rig.eye), L = len(d);
   if (L < 1.5) return [yaw, pitch];
@@ -522,17 +526,53 @@ function gatherInput() {
     if (keys.KeyW) mz += 1; if (keys.KeyS) mz -= 1; if (keys.KeyD) mx += 1; if (keys.KeyA) mx -= 1;
   }
   mx += touch.mx; mz += touch.mz;
-  const jet = (!!keys.Space || touch.jet) && !typing;
+  const jet = typing ? 0 : keys.Space ? 1 : Math.round((+touch.jet || 0) * 100) / 100;
   const dn = (!!keys.KeyC || !!keys.KeyX || touch.down) && !typing;
   [aimYaw, aimPitch] = computeAim();
+  const auto = isTouch && settings.autofire && aimEnemy && performance.now() - aimEnemySince > 90;
   return {
-    seq: ++seq, mx, mz, yaw, pitch, ay: aimYaw, ap: aimPitch, j: jet, jet, dn,
-    sp: !!(keys.ShiftLeft || keys.ShiftRight || touch.sp), f: (mouseDown || touch.fire) && !typing,
+    seq: ++seq, mx, mz, yaw, pitch, ay: aimYaw, ap: aimPitch, j: jet > 0, jet, dn,
+    sp: !!(keys.ShiftLeft || keys.ShiftRight || touch.sp), f: (mouseDown || touch.fire || touch.sfire || auto) && !typing,
     z: zoom, t: Math.round(serverNow() - CFG.INTERP_MS),
   };
 }
+// gentle aim pull toward the enemy nearest the crosshair (touch only, while the player is aiming/moving)
+function aimAssist(dt) {
+  if (!isTouch || settings.assist === 'off' || !me?.alive || !touch.aiming || paused) return;
+  const hi = settings.assist === 'high', cone = hi ? 0.2 : 0.12, pull = hi ? 4.5 : 2.2;
+  const cam = cameraRig(local.pos).cam;
+  let best = null, bestErr = cone;
+  for (const r of remotes.values()) {
+    if (!r.alive || !r.rp || r.prot) continue;
+    const tp = [r.rp[0], r.rp[1] + 1.15, r.rp[2]], d = sub(tp, cam), L = len(d);
+    if (L < 2 || L > 70) continue;
+    let ey = Math.atan2(-d[0], -d[2]) - yaw; ey = Math.atan2(Math.sin(ey), Math.cos(ey));
+    const ep = Math.asin(clamp(d[1] / L, -1, 1)) - pitch, err = Math.hypot(ey, ep);
+    if (err < bestErr && rayWorld(cam, mul(d, 1 / L), L, MAPC) >= L - 0.6) { bestErr = err; best = [ey, ep]; }
+  }
+  if (!best) return;
+  const k = Math.min(1, pull * dt * (1 - (bestErr / cone) * 0.5));
+  yaw += best[0] * k; pitch = clamp(pitch + best[1] * k, -1.4, 1.4);
+}
+// auto pick-up (better gun when holding the pistol or out of ammo) and auto reload
+function autoActions(tn) {
+  if (!isTouch || !me?.alive || state !== 'playing' || tn < nextAuto) return;
+  nextAuto = tn + 250;
+  const cur = me.w[me.slot];
+  if (settings.autopick && tn > autoPickBlock && (!cur || cur.id === 'pistol' || (cur.mag === 0 && cur.reserve === 0))) {
+    for (const m of pickMeshes.values()) {
+      if (m.userData.type !== 'weapon' || me.w.some((x) => x && x.id === m.userData.w)) continue;
+      if (Math.hypot(m.position.x - local.pos[0], m.userData.baseY - 0.5 - local.pos[1], m.position.z - local.pos[2]) < 2) { sendAct('pickup'); autoPickBlock = tn + 1200; break; }
+    }
+  }
+  if (settings.autoreload && cur && cur.reserve > 0 && tn > reloadEnd && tn > autoReloadBlock && tn - lastShotT > 700 &&
+      !(touch.fire || touch.sfire) && cur.mag < Math.ceil(WEAPONS[cur.id].mag * 0.25)) { sendAct('reload'); autoReloadBlock = tn + 1500; }
+}
 function fixedStep() {
   if (!me) return;
+  aimAssist(CFG.INPUT_DT); autoActions(performance.now());
+  if (prevFuel > 0 && local.fuel <= 0 && (touch.jet || keys.Space)) buzz('empty');
+  prevFuel = local.fuel;
   const inp = gatherInput();
   const mv = { mx: inp.mx, mz: inp.mz, yaw: inp.yaw, jump: inp.j, jet: inp.jet, sprint: inp.sp, down: inp.dn };
   prevPos = [...local.pos];
@@ -549,7 +589,7 @@ function predictShot() {   // instant local feedback; the server decides real hi
   if (!w || !me.alive || state !== 'playing') return;
   const W = WEAPONS[w.id], tn = performance.now();
   if (tn < localNextFire || tn < reloadEnd || w.mag <= 0) return;
-  localNextFire = tn + 1000 / W.rate; w.mag--;
+  localNextFire = tn + 1000 / W.rate; w.mag--; lastShotT = tn;
   sfx(W.pellets || W.scope || W.projectile ? 'heavy' : 'shot');
   if (myMesh) { kickRecoil(myMesh); flashMuzzle(myMesh); }
   if (W.projectile) return;
@@ -578,7 +618,7 @@ function setPause(on) {
   if (on && (!connected || inMenu)) return;
   paused = on; $('pause').style.display = on ? 'flex' : 'none';
   if (on) { $('pcode').style.display = soloMatch ? 'none' : 'flex'; $('pcodev').textContent = roomCode || ''; }
-  if (on) { mouseDown = false; for (const k in keys) keys[k] = false; touch.fire = touch.jet = touch.down = false; if (document.pointerLockElement) document.exitPointerLock?.(); }
+  if (on) { mouseDown = false; for (const k in keys) keys[k] = false; resetTouch(); if (document.pointerLockElement) document.exitPointerLock?.(); }
   else if (!isTouch && connected) lockPointer();
 }
 document.addEventListener('pointerlockchange', () => {
@@ -617,57 +657,18 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => { keys[e.code] = false; if (e.code === 'Tab') { boardOpen = false; $('board').style.display = 'none'; } });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouseDown = false; });
 
-// ---------- touch controls
-if (isTouch) {
-  for (const b of document.querySelectorAll('.tbtn')) {
-    b.addEventListener('touchstart', (e) => {
-      e.preventDefault(); e.stopPropagation(); b.classList.add('down');
-      const a = b.dataset.act;
-      if (b.dataset.hold) touch[b.dataset.hold] = true;
-      else if (a === 'zoom') zoom = !zoom;
-      else if (a === 'board') { boardOpen = !boardOpen; renderBoard(); $('board').style.display = boardOpen ? 'block' : 'none'; }
-      else if (a === 'melee') doMelee();
-      else sendAct(a);
-    }, { passive: false });
-    const up = (e) => { e.preventDefault(); b.classList.remove('down'); if (b.dataset.hold) touch[b.dataset.hold] = false; };
-    b.addEventListener('touchend', up, { passive: false }); b.addEventListener('touchcancel', up, { passive: false });
-  }
-  let joyId = null, joyO = null, lookId = null, lookL = null;
-  const joy = $('joy'), knob = $('knob');
-  cv.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    for (const t of e.changedTouches) {
-      if (t.clientX < innerWidth * 0.4 && joyId === null) {
-        joyId = t.identifier; joyO = [t.clientX, t.clientY];
-        joy.style.left = t.clientX + 'px'; joy.style.top = t.clientY + 'px'; joy.style.display = 'block';
-        knob.style.transform = 'translate(0,0)';
-      } else if (lookId === null) { lookId = t.identifier; lookL = [t.clientX, t.clientY]; }
-    }
-  }, { passive: false });
-  cv.addEventListener('touchmove', (e) => {
-    e.preventDefault();
-    for (const t of e.changedTouches) {
-      if (t.identifier === joyId) {
-        let dx = (t.clientX - joyO[0]) / 55, dy = (t.clientY - joyO[1]) / 55;
-        const L = Math.hypot(dx, dy); if (L > 1) { dx /= L; dy /= L; }
-        touch.mx = dx; touch.mz = -dy; touch.sp = L > 0.95;
-        knob.style.transform = `translate(${dx * 32}px,${dy * 32}px)`;
-      } else if (t.identifier === lookId) {
-        const s = (zoom ? 0.0025 : 0.006) * settings.sens;
-        yaw -= (t.clientX - lookL[0]) * s; pitch = clamp(pitch - (t.clientY - lookL[1]) * s, -1.4, 1.4);
-        lookL = [t.clientX, t.clientY];
-      }
-    }
-  }, { passive: false });
-  const end = (e) => {
-    for (const t of e.changedTouches) {
-      if (t.identifier === joyId) { joyId = null; touch.mx = touch.mz = 0; touch.sp = false; joy.style.display = 'none'; }
-      if (t.identifier === lookId) lookId = null;
-    }
-  };
-  cv.addEventListener('touchend', end); cv.addEventListener('touchcancel', end);
-  document.addEventListener('gesturestart', (e) => e.preventDefault());
-}
+// ---------- touch controls (public/controls.js)
+initControls({
+  settings, store, touch, isTouch, canvas: cv, sfx, toast,
+  look: (dy, dp) => { yaw += dy; pitch = clamp(pitch + dp, -1.4, 1.4); },
+  lookScale: () => (isTouch && aimEnemy && settings.assist !== 'off' ? (settings.assist === 'high' ? 0.5 : 0.7) : 1),
+  isZoom: () => zoom, setZoom: (v) => { zoom = v; },
+  act: (a) => sendAct(a), melee: () => doMelee(),
+  toggleBoard: () => { boardOpen = !boardOpen; renderBoard(); $('board').style.display = boardOpen ? 'block' : 'none'; },
+  active: () => connected && !paused && !inMenu && !!me,
+  fuel: () => local.fuel, slot: () => me?.slot ?? 0,
+  weapons: () => (me?.w || []).map((x) => (x ? { name: WEAPONS[x.id].name } : null)),
+});
 
 // ---------- chat / feed / overlays
 function openChat() {
@@ -838,8 +839,43 @@ function render(dt, alpha, tn) {
   for (const m of projMeshes.values()) if (m.userData.target) m.position.lerp(m.userData.target, 1 - Math.exp(-dt * 20));
 
   updateFx(dt);
+  updateControls(dt);
+  updateNadeArc();
   updateHUD(dt);
   renderer.render(scene, camera);
+}
+// grenade trajectory preview while the 💣 button is held (same physics as the server)
+let arcLine = null, arcRing = null;
+const ARC_N = 160;
+function updateNadeArc() {
+  const show = !!(touch.nade && me?.alive && me.gn > 0 && state === 'playing');
+  if (!arcLine) {
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARC_N * 3), 3));
+    arcLine = new THREE.Line(g, new THREE.LineBasicMaterial({ color: '#ffd27a', transparent: true, opacity: 0.95, depthTest: false }));
+    arcLine.renderOrder = 10; arcLine.frustumCulled = false; scene.add(arcLine);
+    arcRing = new THREE.Mesh(new THREE.RingGeometry(CFG.NADE_R - 0.3, CFG.NADE_R, 48), new THREE.MeshBasicMaterial({ color: '#ff6a3a', transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+    arcRing.rotation.x = -Math.PI / 2; arcRing.renderOrder = 9; scene.add(arcRing);
+  }
+  arcLine.visible = arcRing.visible = show;
+  if (!show) return;
+  const d = aimDir(aimYaw, aimPitch + 0.15), h = 1 / 60;
+  const p = [local.pos[0] + d[0] * 0.6, local.pos[1] + CFG.EYE + d[1] * 0.6, local.pos[2] + d[2] * 0.6];
+  const v = [d[0] * CFG.NADE_SPEED + local.vel[0] * 0.5, d[1] * CFG.NADE_SPEED + local.vel[1] * 0.5, d[2] * CFG.NADE_SPEED + local.vel[2] * 0.5];
+  const arr = arcLine.geometry.attributes.position.array, steps = Math.min(ARC_N, Math.round((CFG.NADE_FUSE / 1000) * 60));
+  for (let i = 0; i < steps; i++) {
+    arr[i * 3] = p[0]; arr[i * 3 + 1] = p[1]; arr[i * 3 + 2] = p[2];
+    const n = Math.max(1, Math.ceil(Math.hypot(...v) * h / 0.25)), hh = h / n;
+    for (let j = 0; j < n; j++) {
+      v[1] -= CFG.G * hh;
+      for (let a = 0; a < 3; a++) {
+        const old = p[a]; p[a] += v[a] * hh;
+        if (MAPC.boxes.some((b) => inBox(p, b))) { p[a] = old; v[a] *= -0.45; v[(a + 1) % 3] *= 0.8; v[(a + 2) % 3] *= 0.8; }
+      }
+    }
+  }
+  arcLine.geometry.setDrawRange(0, steps); arcLine.geometry.attributes.position.needsUpdate = true;
+  const floor = rayWorld([p[0], p[1] + 0.2, p[2]], [0, -1, 0], 40, MAPC);
+  arcRing.position.set(p[0], p[1] + 0.2 - Math.min(floor, 40) + 0.06, p[2]);
 }
 
 // ---------- leaving a match / returning to the menu
@@ -855,7 +891,7 @@ function leaveMatch() {
   MAPC = MAP; loadMapVisuals(MAP);
   me = null; connected = false; inMenu = true; paused = false; zoom = false; state = 'playing';
   for (const k in keys) keys[k] = false;
-  touch.mx = touch.mz = 0; touch.fire = touch.jet = touch.down = touch.sp = false;
+  resetTouch();
   for (const id of ['chatlog', 'feed']) $(id).innerHTML = '';
   for (const id of ['hud', 'touch', 'pause', 'conn', 'status', 'end', 'board']) $(id).style.display = 'none';
   document.exitPointerLock?.();
@@ -864,7 +900,11 @@ function leaveMatch() {
 }
 
 // ---------- menu
-function showScreen(id) { for (const s of document.querySelectorAll('#menu .screen')) s.classList.toggle('on', s.id === 's-' + id); }
+function showScreen(id) {
+  for (const s of document.querySelectorAll('#menu .screen')) s.classList.toggle('on', s.id === 's-' + id);
+  if (id === 'ctl') bindSettingsUI($('s-ctl'));
+  if (id === 'set') $('sens').value = settings.sens;
+}
 function playerName() {
   const n = $('name').value.trim() || ('Player' + Math.floor(Math.random() * 1000));
   settings.name = n.slice(0, 16); store.set('name', settings.name);
@@ -937,6 +977,9 @@ function initMenu() {
   $('pcopy').onclick = (e) => copyRoom(roomCode, e.currentTarget);
   $('mcopy').onclick = (e) => copyRoom($('roomin').value.trim().toUpperCase(), e.currentTarget);
   $('resume').onclick = () => setPause(false);
+  $('editlayout').onclick = () => { initAudio(); sfx('ui'); openEditor(); };
+  $('pedit').onclick = () => openEditor();
+  if (!isTouch) $('pedit').style.display = 'none';
   $('leave').onclick = leaveMatch;
   $('backmenu').onclick = leaveMatch;
   $('conncancel').onclick = leaveMatch;
