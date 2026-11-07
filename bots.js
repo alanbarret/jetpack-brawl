@@ -146,7 +146,7 @@ export function botThink(room, p, dt, t) {
   }
   if (t < ai.unstick) goalY = Math.max(goalY, p.pos[1] + 4);
 
-  // ---- vertical control: thrust up, brake into a hover, or descend
+  // ---- vertical control: thrust up, or descend (fall brake is automatic)
   if (p.fuel < 0.1) ai.refuel = true; else if (p.fuel > 0.55) ai.refuel = false;
   let jet = false, down = false;
   const y = p.pos[1];

@@ -49,13 +49,13 @@ let myMesh = null, showcase = null, inMenu = true, booted = false;
 
 // ---------- loading screen
 const TIPS = [
-  'Tap jump and let go — your jetpack hovers you in place.',
+  'Jump off a high ledge — your jetpack fires on its own and slows the fall.',
   'Hold JET to climb, hold ▼ / C to drop back down.',
   'Headshots deal 80% extra damage.',
   'Sneak up behind someone: a melee backstab is an instant kill.',
   'Grab a weapon pickup and press E to swap for it.',
   'Shields soak up 60% of incoming damage.',
-  'Hover above a ledge, then drop a grenade on campers.',
+  'Hold JET to climb above a ledge, then drop a grenade on campers.',
 ];
 function setProgress(p, msg) { $('lbar').style.width = p + '%'; if (msg) $('lstatus').textContent = msg; }
 let tipI = Math.floor(Math.random() * TIPS.length);
@@ -638,7 +638,7 @@ function updateHUD(dt) {
   $('hpf').style.width = me.hp + '%'; $('hpt').textContent = Math.ceil(me.hp);
   $('arf').style.width = me.ar + '%';
   $('fuf').style.width = local.fuel * 100 + '%'; $('fuf').style.background = local.fuel < 0.2 ? '#f55' : '#4cf';
-  $('hov').textContent = local.thrusting && !local.onGround && !(keys.Space || touch.jet) ? '· HOVER' : '';
+  $('hov').textContent = local.thrusting && !local.onGround && !(keys.Space || touch.jet) ? '· BRAKE' : '';
   const w = me.w[me.slot];
   if (w) setHTML($('ammo'), `<span>${WEAPONS[w.id].name}</span>${w.mag}<small>/${w.reserve}</small>` + (tn < reloadEnd ? '<div class="rl">RELOADING</div>' : ''));
   setHTML($('slots'), me.w.map((x, i) => `<div class="slot ${i === me.slot ? 'on' : ''}">${i + 1} ${x ? WEAPONS[x.id].name : '—'}</div>`).join(''));

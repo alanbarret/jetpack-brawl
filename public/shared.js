@@ -4,7 +4,7 @@ export const CFG = {
   R: 0.4, H: 1.8, EYE: 1.6,
   WALK: 6, SPRINT: 9, JUMP: 7.5, G: 22, JET: 38, MAX_UP: 11, MAX_FALL: 30,
   FUEL_DRAIN: 0.25, FUEL_REGEN: 0.15, FUEL_DELAY: 0.8,
-  HOVER_DRAIN: 0.07, HOVER_DELAY: 0.12, HOVER_DAMP: 7,
+  BRAKE_START: 9, BRAKE_SPEED: 4.5, BRAKE_DRAIN: 0.09,
   REGEN_DELAY: 4000, REGEN_RATE: 8,
   RESPAWN_MS: 3000, PROTECT_MS: 2000,
   KILL_LIMIT: 20, MATCH_MS: 8 * 60 * 1000, END_MS: 10000, MAX_PLAYERS: 12,
@@ -114,10 +114,10 @@ function moveAxis(s, axis, delta) {
 // s: {pos, vel, onGround, fuel, groundTime, hoverArmed, pj, air, thrusting}
 // inp: {mx, mz, yaw, jump, jet, sprint, down}
 //
-// Jetpack model: jumping (or tapping jump in the air) ARMS the hover. Once armed and airborne,
-// letting go of the jet makes the player hover at the current altitude (slow fuel drain) instead
-// of falling. Holding `jet` thrusts upward, holding `down` cancels the hover so you descend.
-// Landing disarms it.
+// Jetpack model (Mini Militia style): holding `jet` thrusts upward and burns fuel. There is no hover.
+// When you drop from height (falling faster than BRAKE_START) the jetpack automatically fires to
+// slow the fall to BRAKE_SPEED, burning a little fuel until you land. Hold `down` to dive fast instead.
+// `hoverArmed` is reused as the "braking" latch so the network snapshot format is unchanged.
 export function stepPlayer(s, inp, dt) {
   const sy = Math.sin(inp.yaw), cy = Math.cos(inp.yaw);
   const mx = clamp(inp.mx || 0, -1, 1), mz = clamp(inp.mz || 0, -1, 1);
@@ -128,27 +128,30 @@ export function stepPlayer(s, inp, dt) {
   s.vel[0] += (dx * sp - s.vel[0]) * a;
   s.vel[2] += (dz * sp - s.vel[2]) * a;
 
-  const down = !!inp.down, jump = !!inp.jump;
-  if (jump && s.onGround) { s.vel[1] = CFG.JUMP; s.hoverArmed = true; }
-  else if (jump && !s.pj) s.hoverArmed = true;          // fresh tap in mid-air re-arms hover
-  s.pj = jump;
-  if (down) s.hoverArmed = false;
-
-  let thrusting = false, hovering = false;
+  const down = !!inp.down;
+  s.pj = !!inp.jump;
+  if (inp.jump && s.onGround) s.vel[1] = CFG.JUMP;
+  let thrusting = false;
   if (inp.jet && s.fuel > 0 && !down) {
     if (s.vel[1] < CFG.MAX_UP) s.vel[1] = Math.min(CFG.MAX_UP, s.vel[1] + CFG.JET * dt);
     s.fuel = Math.max(0, s.fuel - CFG.FUEL_DRAIN * dt);
-    s.groundTime = 0; s.hoverArmed = true; thrusting = true;
+    s.groundTime = 0; thrusting = true; s.hoverArmed = false;
   }
   s.air = s.onGround ? 0 : (s.air || 0) + dt;
-  if (!thrusting && s.hoverArmed && !s.onGround && s.fuel > 0 && s.air > CFG.HOVER_DELAY) {
-    hovering = true;                                      // cancel gravity, bleed off vertical speed
-    s.vel[1] -= s.vel[1] * Math.min(1, CFG.HOVER_DAMP * dt);
-    s.fuel = Math.max(0, s.fuel - CFG.HOVER_DRAIN * dt);
+  s.vel[1] = Math.max(-CFG.MAX_FALL, s.vel[1] - CFG.G * dt);
+
+  // automatic fall brake
+  if (!thrusting && !down && s.fuel > 0 && !s.onGround) {
+    if (s.vel[1] < -CFG.BRAKE_START) s.hoverArmed = true;
+  } else if (!thrusting) s.hoverArmed = false;
+  let braking = false;
+  if (s.hoverArmed && !thrusting && !down && s.fuel > 0 && !s.onGround) {
+    braking = true;
+    if (s.vel[1] < -CFG.BRAKE_SPEED) s.vel[1] += (-CFG.BRAKE_SPEED - s.vel[1]) * Math.min(1, 10 * dt);
+    s.fuel = Math.max(0, s.fuel - CFG.BRAKE_DRAIN * dt);
     s.groundTime = 0;
-  }
-  s.thrusting = thrusting || hovering;
-  if (!hovering) s.vel[1] = Math.max(-CFG.MAX_FALL, s.vel[1] - CFG.G * dt);
+  } else if (s.fuel <= 0) s.hoverArmed = false;
+  s.thrusting = thrusting || braking;
 
   if (s.onGround) {
     s.groundTime += dt;

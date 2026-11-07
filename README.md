@@ -4,7 +4,7 @@ Multiplayer jetpack arena shooter: authoritative Node + WebSocket server, Three.
 
 ## Features
 - **Solo vs bots** (1-11 bots, Easy / Normal / Hard) and **online multiplayer** (public arena or private room codes, up to 12 players)
-- **Jetpack hover**: tap jump and let go, and you hover in place. Hold jet to climb, hold descend (`C` / ▼) to drop
+- **Jetpack (Mini Militia style)**: hold jet to climb. Jump off a high ledge and the jetpack fires automatically to slow your fall. Hold descend (`C` / ▼) to dive fast instead
 - Detailed procedural soldiers and six weapon models, with walk/jet/recoil/melee animation
 - Mini-Militia style menu, loading screen, pause menu, settings (sensitivity, volume, shadows)
 - Mobile: auto fullscreen + landscape lock, rotate-to-landscape prompt, touch controls
