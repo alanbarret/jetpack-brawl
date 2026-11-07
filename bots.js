@@ -1,10 +1,13 @@
 // bots.js — server-side bot AI. Bots are ordinary players driven by botThink() each server tick.
-import { CFG, WEAPONS, stepPlayer, rayWorld, clamp } from './public/shared.js';
+import { CFG, WEAPONS, stepPlayer, rayWorld, clamp, NADE_TYPES } from './public/shared.js';
+const nadeCount = (p) => NADE_TYPES.reduce((s, k) => s + (p.nades[k] || 0), 0);
 
 export const DIFFS = {
-  easy:   { aim: 0.075, turn: 3.2, react: 650, rest: 1.6, nade: 9000, view: 55 },
-  normal: { aim: 0.040, turn: 5.5, react: 380, rest: 1.0, nade: 6000, view: 70 },
-  hard:   { aim: 0.018, turn: 9.0, react: 170, rest: 0.55, nade: 3500, view: 90 },
+  // aim = steady wobble (rad), turn = max turn speed (rad/s), react = ms before first shot, settle = ms for the
+  // first-sight aim error to fade, rest = pause between bursts, sprint = chance to run instead of walk
+  easy:   { aim: 0.07, turn: 2.0, react: 950, settle: 1000, rest: 1.8, nade: 12000, view: 50, sprint: 0.15 },
+  normal: { aim: 0.04, turn: 3.0, react: 620, settle: 700,  rest: 1.2, nade: 8000,  view: 65, sprint: 0.3 },
+  hard:   { aim: 0.022, turn: 4.4, react: 380, settle: 450, rest: 0.8, nade: 5500,  view: 80, sprint: 0.45 },
 };
 export const BOT_NAMES = ['Viper', 'Falcon', 'Ghost', 'Razor', 'Nomad', 'Phantom', 'Cobra', 'Hawk', 'Titan', 'Rogue', 'Blaze', 'Storm', 'Raven', 'Saber'];
 
@@ -16,7 +19,7 @@ const SCORE = {
   pistol: () => 1,
   smg: (d) => (d < 22 ? 4 : 2),
   ar: () => 5,
-  shotgun: (d) => (d < 12 ? 6.5 : 0.6),
+  shotgun: (d) => (d < 10 ? 6.5 : 0.4),
   sniper: (d) => (d > 38 ? 6 : d > 22 ? 3 : 0.8),
   rocket: (d) => (d < 9 ? 0 : d < 50 ? 4.6 : 2),
 };
@@ -29,6 +32,7 @@ export function newBotState(diff) {
     strafe: 1, strafeUntil: 0, burstUntil: 0, restUntil: 0,
     nextSwap: 0, nextNade: 0, nextPick: 0, nextHouse: 0,
     refuel: false, chk: 0, chkPos: null, unstick: 0, stuckN: 0,
+    offY: 0, offP: 0, seed: Math.random() * 100, idleUntil: 0, lookYaw: 0, goalSprint: false,
   };
 }
 
@@ -51,7 +55,7 @@ function pickGoal(room, p) {
     let want = false;
     if (k.type === 'health') want = p.hp < 65;
     else if (k.type === 'shield') want = p.armor < 40;
-    else if (k.type === 'grenade') want = p.grenades < 3;
+    else if (k.type === 'grenade') want = nadeCount(p) < 3;
     else if (k.type === 'weapon') want = !hasGun || ammoLow;
     if (!want) continue;
     const d = Math.hypot(k.pos[0] - p.pos[0], (k.pos[1] - p.pos[1]) * 1.5, k.pos[2] - p.pos[2]);
@@ -81,7 +85,7 @@ export function botThink(room, p, dt, t) {
       if (d < bd) { bd = d; best = q; }
     }
     if (curVisible && t - ai.seenAt < 2500) { ai.lastSeen = t; }
-    else if (best) { if (ai.target !== best.id) { ai.target = best.id; ai.seenAt = t; } ai.lastSeen = t; }
+    else if (best) { if (ai.target !== best.id) { ai.target = best.id; ai.seenAt = t; ai.offY = rand(-0.35, 0.35); ai.offP = rand(-0.18, 0.12); } ai.lastSeen = t; }
     const cur = ai.target != null ? room.players.get(ai.target) : null;
     if (cur && cur.alive && t - ai.lastSeen < 10) ai.lastKnown = [...cur.pos];
   }
@@ -113,8 +117,8 @@ export function botThink(room, p, dt, t) {
     const dh = Math.hypot(dx, dz) || 1, tx = dx / dh, tz = dz / dh;
     const ideal = IDEAL[cw?.id] ?? 15;
     const radial = dh > ideal + 4 ? 1 : dh < ideal - 4 ? -1 : 0;
-    if (t >= ai.strafeUntil || (t - p.lastDamage < 300 && Math.random() < 0.08)) {
-      ai.strafe = Math.random() < 0.5 ? -1 : 1; ai.strafeUntil = t + rand(700, 1700);
+    if (t >= ai.strafeUntil || (t - p.lastDamage < 300 && Math.random() < 0.03)) {
+      ai.strafe = Math.random() < 0.25 ? 0 : Math.random() < 0.5 ? -1 : 1; ai.strafeUntil = t + rand(1100, 2600);
     }
     wx = tx * radial - tz * ai.strafe * 0.8;
     wz = tz * radial + tx * ai.strafe * 0.8;
@@ -123,13 +127,15 @@ export function botThink(room, p, dt, t) {
     if (tgt && ai.lastKnown && t - ai.lastSeen < 3000) { ai.goal = ai.lastKnown; ai.goalPick = false; ai.goalUntil = t + 500; }
     else {
       const reached = ai.goal && Math.hypot(ai.goal[0] - p.pos[0], ai.goal[2] - p.pos[2]) < 1.5 && Math.abs(ai.goal[1] - p.pos[1]) < 1.8;
+      if (reached && t > ai.idleUntil + 3000 && Math.random() < 0.6) { ai.idleUntil = t + rand(600, 1800); ai.lookYaw = ai.yaw; }
       if (!ai.goal || t > ai.goalUntil || reached) {
-        const g = pickGoal(room, p); ai.goal = g.pos; ai.goalPick = g.pick; ai.goalUntil = t + 9000;
+        const g = pickGoal(room, p); ai.goal = g.pos; ai.goalPick = g.pick; ai.goalUntil = t + 12000;
+        ai.goalSprint = g.pick || Math.random() < D.sprint;
       }
     }
     const dx = ai.goal[0] - p.pos[0], dz = ai.goal[2] - p.pos[2], dh = Math.hypot(dx, dz);
-    if (dh > 1.0) { wx = dx / dh; wz = dz / dh; }
-    goalY = ai.goal[1] + 0.15; sprint = true;
+    if (dh > 1.0 && t >= ai.idleUntil) { wx = dx / dh; wz = dz / dh; }
+    goalY = t < ai.idleUntil ? p.pos[1] : ai.goal[1] + 0.15; sprint = ai.goalSprint;
   }
 
   // ---- stuck detection: if we want to move but aren't, fly up and flip strafe
@@ -165,15 +171,22 @@ export function botThink(room, p, dt, t) {
       ax += tgt.vel[0] * tt; az += tgt.vel[2] * tt;
     }
     const dx = ax - eye[0], dy = ay - eye[1], dz = az - eye[2], L = Math.hypot(dx, dy, dz) || 1;
-    wantYaw = Math.atan2(-dx, -dz); wantPitch = Math.asin(clamp(dy / L, -1, 1)); aimed = visible;
-  } else if (wx || wz) wantYaw = Math.atan2(-wx, -wz);
-  const step = D.turn * dt;
-  ai.yaw = wrap(ai.yaw + clamp(wrap(wantYaw - ai.yaw), -step, step));
-  ai.pitch += clamp(wantPitch - ai.pitch, -step, step);
+    const decay = Math.exp((-dt * 3000) / D.settle); ai.offY *= decay; ai.offP *= decay;
+    const wob = Math.sin(t * 0.0019 + ai.seed) * 0.6 + Math.sin(t * 0.0041 + ai.seed * 2) * 0.4;
+    wantYaw = Math.atan2(-dx, -dz) + ai.offY + wob * D.aim;
+    wantPitch = Math.asin(clamp(dy / L, -1, 1)) + ai.offP + Math.cos(t * 0.0023 + ai.seed) * D.aim * 0.6;
+    aimed = visible;
+  } else if (t < ai.idleUntil) { wantYaw = ai.lookYaw + Math.sin(t * 0.0015 + ai.seed) * 1.1; }     // glance around
+  else if (wx || wz) wantYaw = Math.atan2(-wx, -wz);
+  // human-like turning: ease toward the target, never faster than D.turn
+  const ease = 1 - Math.exp(-7 * dt), cap = D.turn * dt;
+  ai.yaw = wrap(ai.yaw + clamp(wrap(wantYaw - ai.yaw) * ease * 1.6, -cap, cap));
+  ai.pitch += clamp((wantPitch - ai.pitch) * ease * 1.6, -cap, cap);
   const aimErr = Math.abs(wrap(wantYaw - ai.yaw)) + Math.abs(wantPitch - ai.pitch);
   p.yaw = p.aimYaw = ai.yaw; p.pitch = p.aimPitch = ai.pitch;
 
   // ---- apply movement through the shared (authoritative) physics
+  if (t < ai.burstUntil) { wx *= 0.5; wz *= 0.5; sprint = false; }
   const sy = Math.sin(ai.yaw), cy = Math.cos(ai.yaw);
   let mx = cy * wx - sy * wz, mz = -sy * wx - cy * wz;
   const ml = Math.hypot(mx, mz); if (ml > 1) { mx /= ml; mz /= ml; }
@@ -185,20 +198,21 @@ export function botThink(room, p, dt, t) {
   const hd = Math.hypot(tgt.pos[0] - p.pos[0], tgt.pos[2] - p.pos[2]);
   if (hd < 1.8 && Math.abs(tgt.pos[1] - p.pos[1]) < 1.4) room.onAction(p, 'melee');
 
-  if (p.grenades > 0 && t >= ai.nextNade && d3 > 7 && d3 < 24 && t - ai.seenAt > D.react && aimErr < 0.2) {
+  if (nadeCount(p) > 0 && t >= ai.nextNade && d3 > 7 && d3 < 22 && t - ai.seenAt > D.react && aimErr < 0.2) {
     ai.nextNade = t + D.nade * (0.6 + Math.random() * 0.8);
-    p.aimPitch = ai.pitch + d3 * 0.012; p.aimYaw = ai.yaw + rand(-D.aim, D.aim);
+    const r = Math.random(); p.nadeSel = r < 0.6 ? 'frag' : r < 0.85 ? 'gas' : 'prox';
+    p.aimPitch = ai.pitch + clamp((d3 - 10) / 36, -0.2, 0.7); p.aimYaw = ai.yaw + rand(-D.aim, D.aim) * 2;
     room.onAction(p, 'nade');
     p.aimPitch = ai.pitch; p.aimYaw = ai.yaw;
   }
 
-  if (t - ai.seenAt >= D.react && aimErr < 0.15 && !(cw.id === 'rocket' && d3 < 7)) {
+  if (t - ai.seenAt >= D.react && aimErr < 0.12 && !(cw.id === 'rocket' && d3 < 7) && !(cw.id === 'shotgun' && d3 > 18)) {
     if (t >= ai.restUntil && t >= ai.burstUntil) {
       ai.burstUntil = t + 300 + Math.random() * 700;
       ai.restUntil = ai.burstUntil + D.rest * (150 + Math.random() * 350);
     }
     if (t < ai.burstUntil) {
-      p.aimYaw = ai.yaw + rand(-D.aim, D.aim); p.aimPitch = ai.pitch + rand(-D.aim, D.aim);
+      p.aimYaw = ai.yaw + rand(-D.aim, D.aim) * 0.5; p.aimPitch = ai.pitch + rand(-D.aim, D.aim) * 0.5;
       room.tryFire(p, t, cw.id === 'sniper');
       p.aimYaw = ai.yaw; p.aimPitch = ai.pitch;
     }

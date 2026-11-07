@@ -177,6 +177,11 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 .joy.act .lockhint{display:block}.joy.lockarm .lockhint{background:var(--acc);color:var(--accd);border-color:#ffd88a}
 #runlock{position:fixed;left:calc(16px + var(--sal));bottom:calc(14px + var(--sab));display:none;background:var(--acc);color:var(--accd);font-weight:800;font-size:12px;letter-spacing:.5px;padding:6px 11px;border-radius:14px;pointer-events:none;z-index:11}
 .tbtn.pill,.eitem.pill{border-radius:22px;background:rgba(255,180,58,.85);border-color:#ffd88a;color:#2a1a00;text-shadow:none;letter-spacing:.5px}
+.tbtn.chip,.eitem.chip{border-radius:14px;background:rgba(10,14,9,.78);border:1.5px solid #ffd88a;color:#ffd88a;font-weight:800;letter-spacing:.5px;white-space:nowrap}
+#touch.deadctl .tbtn,#touch.deadctl .joy{display:none!important}
+#nades{display:flex;gap:5px}
+.ng{background:#000a;padding:3px 7px;border-radius:5px;font-size:11px;font-weight:800;letter-spacing:.5px;color:var(--ink2)}
+.ng.on{color:var(--ink);outline:2px solid var(--acc)}
 .tbtn[data-id=fire]{background:rgba(255,90,74,.32);border-color:rgba(255,160,150,.9)}
 .tbtn[data-id=lfire]{background:rgba(255,90,74,.28);border-color:rgba(255,160,150,.85)}
 .joy.aim{border-color:rgba(255,200,110,.8)}.joy.aim .knob{background:rgba(255,190,90,.85)}
@@ -277,8 +282,8 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
     <div class="how">
       <b>Jump</b><span>Hold <u>JET</u> to climb. Jump off a high ledge and the jetpack <u>slows your fall</u> automatically</span>
       <b>Jet</b><span>Hold to climb · hold <b style="color:inherit">descend</b> to drop</span>
-      <b>PC</b><span>WASD move · Space jet · C descend · Shift sprint · Mouse aim/fire · Right-click zoom · R reload · Q swap · G grenade · F melee · E take weapon · Tab scores</span>
-      <b>Phone</b><span>PUBG style: left stick moves (slide far up to lock running) · drag the right side to look · big FIRE on the right (drag it to aim) or small FIRE on the left · tap the weapon slots to switch · 🔍 scope · R reload · JET (swipe down = dive) · 💣 hold for arc · PICK UP appears next to weapons</span>
+      <b>PC</b><span>WASD move · Space jet · C descend · Shift sprint · Mouse aim/fire · Right-click zoom · R reload · Q swap · G throw grenade · T change grenade type · F melee · E take weapon · Tab scores</span>
+      <b>Phone</b><span>PUBG style: left stick moves (slide far up to lock running) · drag the right side to look · big FIRE on the right (drag it to aim) or small FIRE on the left · tap the weapon slots to switch · 🔍 scope · grenade chip switches Frag / Gas / Proxy · R reload · JET (swipe down = dive) · 💣 hold for arc · PICK UP appears next to weapons</span>
     </div>
     <button class="mbtn ghost" data-go="main">← Back</button>
   </div>
@@ -354,6 +359,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
   <div class="tbtn" data-id="lfire">FIRE</div>
   <div class="tbtn" data-id="jet"><div class="ring"></div><div class="lev"></div><span>JET</span></div>
   <div class="tbtn" data-id="nade">💣</div>
+  <div class="tbtn chip" data-id="ntype">FRAG ⟳</div>
   <div class="tbtn" data-id="melee">🔪</div>
   <div class="tbtn" data-id="reload">R</div>
   <div class="tbtn pill" data-id="pickup">✋ PICK UP</div>

@@ -5,7 +5,7 @@ import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
-import { CFG, WEAPONS, WEAPON_POOL, MAPS, MAP_IDS, stepPlayer, aimDir, rayWorld, rayBox, hitboxes, inBox, clamp } from './public/shared.js';
+import { CFG, WEAPONS, WEAPON_POOL, MAPS, MAP_IDS, stepPlayer, aimDir, rayWorld, rayBox, hitboxes, inBox, clamp, NADES, NADE_TYPES, NADE_MAX, nadeLaunch, stepNade } from './public/shared.js';
 import { DIFFS, BOT_NAMES, newBotState, botThink } from './bots.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -72,7 +72,7 @@ let nextId = 1;
 
 class Room {
   constructor(code, opts = {}) {
-    this.code = code; this.players = new Map(); this.projectiles = []; this.events = [];
+    this.code = code; this.players = new Map(); this.projectiles = []; this.clouds = []; this.events = [];
     this.nextProj = 1; this.nextPick = 1000; this.solo = !!opts.solo;
     this.mapId = MAPS[opts.map] ? opts.map : 'outpost'; this.map = MAPS[this.mapId];
     this.resetPickups();
@@ -91,7 +91,7 @@ class Room {
       hoverArmed: false, pj: false, air: 0, thrusting: false,
       yaw: 0, pitch: 0, aimYaw: 0, aimPitch: 0, jet: false,
       hp: 100, armor: 0, alive: false, respawnAt: 0, protectUntil: 0,
-      weapons: [null, null], slot: 0, nextFire: 0, reloadUntil: 0, grenades: 3, nextNade: 0, nextMelee: 0,
+      weapons: [null, null], slot: 0, nextFire: 0, reloadUntil: 0, nades: { frag: 2, gas: 1, prox: 1 }, nadeSel: 'frag', nextNade: 0, nextMelee: 0,
       kills: 0, deaths: 0, lastDamage: 0, lastSeq: 0, budget: 0.1, lastInputAt: now(), history: [], priv: [],
       ai: bot ? newBotState(diff) : null,
     };
@@ -130,7 +130,7 @@ class Room {
     Object.assign(p, {
       pos: [...best], vel: [0, 0, 0], onGround: false, hp: 100, armor: 0, alive: true, fuel: 1, groundTime: 0,
       hoverArmed: false, pj: false, air: 0, thrusting: false, jet: false,
-      weapons: [mkW('pistol'), null], slot: 0, grenades: 3, reloadUntil: 0, nextFire: 0,
+      weapons: [mkW('pistol'), null], slot: 0, nades: { frag: 2, gas: 1, prox: 1 }, reloadUntil: 0, nextFire: 0,
       protectUntil: now() + CFG.PROTECT_MS, history: [],
     });
     p.yaw = p.aimYaw = Math.atan2(best[0], best[2]);  // face map centre
@@ -170,10 +170,16 @@ class Room {
       const o = 1 - p.slot;
       if (p.weapons[o]) { p.slot = o; p.reloadUntil = 0; p.nextFire = Math.max(p.nextFire, t + 250); }
     } else if (a === 'nade') {
-      if (p.grenades > 0 && t >= p.nextNade) {
-        p.grenades--; p.nextNade = t + CFG.NADE_CD; p.protectUntil = 0;
-        this.spawnProj(p, 'nade', [p.pos[0], p.pos[1] + CFG.EYE, p.pos[2]], aimDir(p.aimYaw, p.aimPitch + 0.15), CFG.NADE_SPEED);
+      let ty = p.nadeSel;
+      if (!(p.nades[ty] > 0)) ty = NADE_TYPES.find((k) => p.nades[k] > 0);   // selected type empty: throw what we have
+      if (ty && t >= p.nextNade) {
+        p.nades[ty]--; p.nextNade = t + CFG.NADE_CD; p.protectUntil = 0;
+        const n = nadeLaunch(p.pos, p.vel, p.aimYaw, p.aimPitch, ty);
+        this.projectiles.push({ id: this.nextProj++, type: ty, owner: p.id, pos: n.pos, vel: n.vel, stuck: false, born: t });
       }
+    } else if (a === 'nadesel') {
+      const i = NADE_TYPES.indexOf(p.nadeSel);
+      for (let k = 1; k <= 3; k++) { const ty = NADE_TYPES[(i + k) % 3]; if (p.nades[ty] > 0 || k === 3) { p.nadeSel = ty; break; } }
     } else if (a === 'melee') this.melee(p);
     else if (a === 'pickup') this.swapPickup(p);
   }
@@ -208,7 +214,11 @@ class Room {
     }
     const hit = [o[0] + d[0] * best, o[1] + d[1] * best, o[2] + d[2] * best];
     this.events.push({ e: 'shot', id: p.id, o: o.map(r2), h: hit.map(r2), pl: target ? 1 : 0 });
-    if (target) this.damage(target, W.dmg * (head ? CFG.HEADSHOT : 1), p, wid, head);
+    if (target) {
+      let mul = head ? CFG.HEADSHOT : 1;
+      if (W.falloff) { const [n, f, m] = W.falloff; mul *= best <= n ? 1 : Math.max(m, 1 - ((best - n) / (f - n)) * (1 - m)); }
+      this.damage(target, W.dmg * mul, p, wid, head);
+    }
   }
   rewind(q, t) {  // lag compensation: where was q at time t?
     const h = q.history;
@@ -293,7 +303,7 @@ class Room {
       let took = false;
       if (k.type === 'health' && p.hp < 100) { p.hp = Math.min(100, p.hp + 50); took = true; }
       else if (k.type === 'shield' && p.armor < 100) { p.armor = Math.min(100, p.armor + 50); took = true; }
-      else if (k.type === 'grenade' && p.grenades < 5) { p.grenades = Math.min(5, p.grenades + 2); took = true; }
+      else if (k.type === 'grenade' && NADE_TYPES.some((ty) => p.nades[ty] < NADE_MAX)) { for (const ty of NADE_TYPES) p.nades[ty] = Math.min(NADE_MAX, p.nades[ty] + 1); took = true; }
       else if (k.type === 'weapon') {
         const W = WEAPONS[k.w];
         const have = p.weapons.find((w) => w && w.id === k.w);
@@ -309,37 +319,57 @@ class Room {
 
   spawnProj(p, type, o, d, speed) {
     const v = [d[0] * speed, d[1] * speed, d[2] * speed];
-    if (type === 'nade') { v[0] += p.vel[0] * 0.5; v[1] += p.vel[1] * 0.5; v[2] += p.vel[2] * 0.5; }
     this.projectiles.push({ id: this.nextProj++, type, owner: p.id, pos: [o[0] + d[0] * 0.6, o[1] + d[1] * 0.6, o[2] + d[2] * 0.6], vel: v, born: now() });
   }
   updateProjectiles(dt) {
     const t = now();
     for (const pr of this.projectiles) {
       if (pr.dead) continue;
-      const n = Math.max(1, Math.ceil(Math.hypot(...pr.vel) * dt / 0.25)), h = dt / n;
-      for (let i = 0; i < n && !pr.dead; i++) {
-        if (pr.type === 'nade') pr.vel[1] -= CFG.G * h;
-        for (let a = 0; a < 3; a++) {
-          const old = pr.pos[a];
-          pr.pos[a] += pr.vel[a] * h;
-          if (this.map.boxes.some((b) => inBox(pr.pos, b))) {
-            pr.pos[a] = old;
-            if (pr.type === 'rocket') { this.explode(pr, WEAPONS.rocket.dmg, WEAPONS.rocket.radius); break; }
-            pr.vel[a] *= -0.45; pr.vel[(a + 1) % 3] *= 0.8; pr.vel[(a + 2) % 3] *= 0.8;
-          }
-        }
-        if (pr.dead) break;
-        if (pr.type === 'rocket') {
+      if (pr.type === 'rocket') {
+        const n = Math.max(1, Math.ceil(Math.hypot(...pr.vel) * dt / 0.25)), h = dt / n;
+        for (let i = 0; i < n && !pr.dead; i++) {
+          for (let a = 0; a < 3; a++) pr.pos[a] += pr.vel[a] * h;
+          if (this.map.boxes.some((b) => inBox(pr.pos, b))) { this.explode(pr, WEAPONS.rocket.dmg, WEAPONS.rocket.radius); break; }
           for (const q of this.players.values()) {
             if (!q.alive || (q.id === pr.owner && t - pr.born < 300)) continue;
             if (hitboxes(q.pos).some((b) => inBox(pr.pos, b))) { this.explode(pr, WEAPONS.rocket.dmg, WEAPONS.rocket.radius); break; }
           }
         }
+        if (t - pr.born > 8000) pr.dead = true;
+        continue;
       }
-      if (!pr.dead && pr.type === 'nade' && t - pr.born > CFG.NADE_FUSE) this.explode(pr, CFG.NADE_DMG, CFG.NADE_R);
-      if (t - pr.born > 8000) pr.dead = true;
+      // grenades
+      const N = NADES[pr.type];
+      const wasStuck = pr.stuck;
+      stepNade(pr, dt, this.map, pr.type);
+      if (pr.stuck && !wasStuck) pr.stuckAt = t;
+      if (pr.type === 'frag' && t - pr.born > N.fuse) this.explode(pr, N.dmg, N.r);
+      else if (pr.type === 'gas' && t - pr.born > N.fuse) {
+        pr.dead = true;
+        this.clouds.push({ pos: [...pr.pos], owner: pr.owner, until: t + N.dur, next: t });
+        this.events.push({ e: 'gas', p: pr.pos.map(r2), r: N.r, d: N.dur });
+      } else if (pr.type === 'prox') {
+        if (pr.stuck && t - pr.stuckAt > N.arm) {
+          for (const q of this.players.values()) {
+            if (!q.alive || q.id === pr.owner || t < q.protectUntil) continue;
+            if (Math.hypot(q.pos[0] - pr.pos[0], q.pos[1] + 0.9 - pr.pos[1], q.pos[2] - pr.pos[2]) < N.trig) { this.explode(pr, N.dmg, N.r); break; }
+          }
+        }
+        if (!pr.dead && t - pr.born > N.life) pr.dead = true;
+      }
     }
     this.projectiles = this.projectiles.filter((p) => !p.dead);
+    // gas clouds: damage everyone inside twice a second
+    for (const c of this.clouds) {
+      if (t < c.next) continue;
+      c.next = t + 500;
+      const att = this.players.get(c.owner) || null;
+      for (const q of this.players.values()) {
+        if (!q.alive || Math.hypot(q.pos[0] - c.pos[0], q.pos[1] + 0.9 - c.pos[1], q.pos[2] - c.pos[2]) > NADES.gas.r) continue;
+        this.damage(q, NADES.gas.dps * 0.5 * (q.id === c.owner ? 0.5 : 1), att, 'gas', false, c.pos);
+      }
+    }
+    this.clouds = this.clouds.filter((c) => t < c.until);
   }
   explode(pr, dmg, radius) {
     pr.dead = true;
@@ -359,12 +389,12 @@ class Room {
       }
       let amt = dmg * (1 - (d / radius) * 0.7);
       if (q.id === pr.owner) amt *= 0.5;
-      this.damage(q, amt, att, pr.type === 'nade' ? 'grenade' : 'rocket', false, pr.pos);
+      this.damage(q, amt, att, pr.type, false, pr.pos);
     }
   }
 
   endMatch(winner) {
-    this.state = 'ended'; this.endAt = now() + CFG.END_MS; this.projectiles = [];
+    this.state = 'ended'; this.endAt = now() + CFG.END_MS; this.projectiles = []; this.clouds = [];
     const standings = [...this.players.values()].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
       .map((p) => ({ name: p.name, color: p.color, kills: p.kills, deaths: p.deaths }));
     this.events.push({ e: 'end', winner: winner?.name || null, standings });
@@ -406,7 +436,7 @@ class Room {
     const t = now();
     const ps = [...this.players.values()].map((p) => [p.id, r2(p.pos[0]), r2(p.pos[1]), r2(p.pos[2]), r2(p.aimYaw), r2(p.aimPitch),
       p.alive ? 1 : 0, p.weapons[p.slot]?.id || '', t < p.protectUntil ? 1 : 0, Math.ceil(p.hp), p.jet && p.alive ? 1 : 0, Math.ceil(p.armor)]);
-    const pr = this.projectiles.map((q) => [q.id, q.type, r2(q.pos[0]), r2(q.pos[1]), r2(q.pos[2])]);
+    const pr = this.projectiles.map((q) => [q.id, q.type, r2(q.pos[0]), r2(q.pos[1]), r2(q.pos[2]), r2(q.vel[0]), r2(q.vel[1]), r2(q.vel[2]), q.stuck ? (t - q.stuckAt > NADES.prox.arm ? 2 : 1) : 0, q.normal ?? 1]);
     const pk = this.pickups.filter((k) => k.active).map((k) => [k.id, k.type, k.w || '', r2(k.pos[0]), r2(k.pos[1]), r2(k.pos[2])]);
     const ev = this.events; this.events = [];
     const time = Math.max(0, (this.state === 'playing' ? this.matchEnd : this.endAt) - t);
@@ -415,7 +445,7 @@ class Room {
         type: 's', t, ack: p.lastSeq, st: this.state, time, ps, pr, pk, ev, pv: p.priv,
         me: { pos: p.pos, vel: p.vel, og: p.onGround, fuel: p.fuel, gt: p.groundTime, ha: p.hoverArmed, pj: p.pj, air: p.air, th: p.thrusting,
               hp: Math.ceil(p.hp), ar: p.armor, alive: p.alive, rs: Math.max(0, p.respawnAt - t), w: p.weapons, slot: p.slot,
-              rl: p.reloadUntil ? Math.max(0, p.reloadUntil - t) : 0, gn: p.grenades, prot: t < p.protectUntil },
+              rl: p.reloadUntil ? Math.max(0, p.reloadUntil - t) : 0, gn: p.nades, gs: p.nadeSel, prot: t < p.protectUntil },
       });
       p.priv = [];
     }

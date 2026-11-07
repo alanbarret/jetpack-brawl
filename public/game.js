@@ -1,6 +1,6 @@
 // public/game.js — Three.js client: loading, menu, rendering, input, prediction, interpolation, HUD
 import * as THREE from 'three';
-import { CFG, WEAPONS, MAP, MAPS, MAP_IDS, stepPlayer, aimDir, rayWorld, rayBox, hitboxes, inBox } from './shared.js';
+import { CFG, WEAPONS, MAP, MAPS, MAP_IDS, stepPlayer, aimDir, rayWorld, rayBox, hitboxes, inBox, NADES, NADE_TYPES, nadeLaunch, stepNade } from './shared.js';
 import { initControls, applyLayout, updateControls, resetTouch, bindSettingsUI, openEditor, buzz } from './controls.js';
 import { makeSoldier, setWeapon, animateSoldier, kickRecoil, flashMuzzle, swingMelee, muzzleWorld, setBlink, makeWeaponModel } from './models.js';
 
@@ -16,7 +16,7 @@ const lerp3 = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, 
 const lerpAng = (a, b, k) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * k; };
 const fmt = (ms) => { const s = Math.ceil(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const setHTML = (el, h) => { if (el._h !== h) { el.innerHTML = h; el._h = h; } };
-const wName = (id) => WEAPONS[id]?.name || { melee: 'Melee', grenade: 'Grenade', void: 'Void' }[id] || id;
+const wName = (id) => WEAPONS[id]?.name || { melee: 'Melee', grenade: 'Grenade', frag: 'Frag', gas: 'Gas', prox: 'Proxy mine', void: 'Void' }[id] || id;
 const isTouch = matchMedia('(pointer: coarse)').matches;
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isStandalone = matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches || navigator.standalone;
@@ -45,7 +45,7 @@ let seq = 0; const pending = [];
 let zoom = false, mouseDown = false, chatOpen = false, boardOpen = false, paused = false, lastWheel = 0;
 let shake = 0, hitT = 0, dmgT = 0, dmgDirT = 0, dmgAngle = 0, localNextFire = 0;
 const keys = {}; const touch = { mx: 0, mz: 0, fire: false, sfire: false, jet: 0, down: false, sp: false, nade: false, aiming: false };
-let aimEnemy = null, aimEnemySince = 0, nextAuto = 0, autoPickBlock = 0, autoReloadBlock = 0, lastShotT = 0, prevFuel = 1;
+let wasDead = false, aimEnemy = null, aimEnemySince = 0, nextAuto = 0, autoPickBlock = 0, autoReloadBlock = 0, lastShotT = 0, prevFuel = 1;
 const roster = new Map(), remotes = new Map(), pickMeshes = new Map(), projMeshes = new Map(), fx = [];
 let myMesh = null, showcase = null, inMenu = true, booted = false;
 
@@ -258,12 +258,106 @@ function explosion(p, r) {
   const s = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), new THREE.MeshBasicMaterial({ color: '#3a3a3a', transparent: true, opacity: 0.5 }));
   s.position.set(p[0], p[1] + 0.6, p[2]); scene.add(s); fx.push({ o: s, life: 1.1, max: 1.1, kind: 'boom', r: r * 0.9, op: 0.5 });
 }
+// ---------- projectile models: rocket with fins + flame, frag / gas grenades, proximity mine
+const PG = {};
+function projGeo() {
+  if (PG.ok) return PG;
+  PG.ok = true;
+  PG.body = new THREE.CylinderGeometry(0.075, 0.075, 0.62, 12).rotateX(Math.PI / 2);
+  PG.nose = new THREE.ConeGeometry(0.075, 0.2, 12).rotateX(Math.PI / 2).translate(0, 0, 0.41);
+  PG.fin = new THREE.BoxGeometry(0.012, 0.15, 0.16).translate(0, 0.1, -0.24);
+  PG.flame = new THREE.ConeGeometry(0.07, 0.42, 10).rotateX(-Math.PI / 2).translate(0, 0, -0.52);
+  PG.frag = new THREE.SphereGeometry(0.1, 14, 10).scale(1, 1.25, 1);
+  PG.band = new THREE.TorusGeometry(0.1, 0.012, 6, 16).rotateX(Math.PI / 2);
+  PG.fuse = new THREE.CylinderGeometry(0.035, 0.04, 0.07, 8).translate(0, 0.15, 0);
+  PG.lever = new THREE.BoxGeometry(0.03, 0.17, 0.012).translate(0.045, 0.08, 0.1);
+  PG.pin = new THREE.TorusGeometry(0.035, 0.007, 6, 12).translate(-0.06, 0.17, 0);
+  PG.can = new THREE.CylinderGeometry(0.075, 0.075, 0.26, 14);
+  PG.canBand = new THREE.CylinderGeometry(0.078, 0.078, 0.05, 14);
+  PG.canTop = new THREE.CylinderGeometry(0.05, 0.06, 0.05, 10).translate(0, 0.155, 0);
+  PG.disc = new THREE.CylinderGeometry(0.17, 0.19, 0.06, 18);
+  PG.dome = new THREE.SphereGeometry(0.09, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.03, 0);
+  PG.led = new THREE.SphereGeometry(0.03, 8, 6).translate(0, 0.11, 0);
+  PG.warn = new THREE.TorusGeometry(0.15, 0.014, 6, 24).rotateX(Math.PI / 2).translate(0, 0.032, 0);
+  const S = (c, r = 0.6, m = 0.3) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
+  PG.m = {
+    rocket: S('#5d6650', 0.5, 0.4), nose: S('#c23a2a', 0.5, 0.2), fin: S('#3b3f36', 0.7, 0.3),
+    flame: new THREE.MeshBasicMaterial({ color: '#ffb347', transparent: true, opacity: 0.9 }),
+    frag: S('#4f5d2c', 0.7, 0.2), metal: S('#9aa0a6', 0.35, 0.8), gas: S('#7a8a62', 0.6, 0.3), yellow: S('#e2c12f', 0.6, 0.1),
+    mine: S('#6b737c', 0.55, 0.15), led: new THREE.MeshBasicMaterial({ color: '#ff2a2a' }),
+  };
+  return PG;
+}
+function makeProjMesh(type) {
+  const G = projGeo(), M = G.m, g = new THREE.Group(), add = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; g.add(m); return m; };
+  if (type === 'rocket') {
+    add(G.body, M.rocket); add(G.nose, M.nose);
+    for (let i = 0; i < 4; i++) { const f = add(G.fin, M.fin); f.rotation.z = (i * Math.PI) / 2; }
+    g.userData.flame = add(G.flame, M.flame); g.userData.flame.castShadow = false;
+  } else if (type === 'frag') {
+    add(G.frag, M.frag); add(G.band, M.frag).position.y = 0.04; add(G.fuse, M.metal); add(G.lever, M.metal); add(G.pin, M.metal);
+  } else if (type === 'gas') {
+    add(G.can, M.gas); add(G.canBand, M.yellow); add(G.canTop, M.metal);
+  } else {
+    const body = new THREE.Group(); g.add(body); g.userData.body = body;
+    for (const [geo, mat] of [[G.disc, M.mine], [G.dome, M.metal], [G.led, M.led], [G.warn, M.yellow]]) { const m = new THREE.Mesh(geo, mat); m.castShadow = true; body.add(m); }
+    g.userData.led = body.children[2]; g.userData.led.material = M.led.clone();
+  }
+  g.userData.type = type;
+  return g;
+}
+const tmpV = new THREE.Vector3();
+function updateProjMeshes(dt, tn) {
+  for (const m of projMeshes.values()) {
+    const u = m.userData;
+    if (u.target) m.position.lerp(u.target, 1 - Math.exp(-dt * 20));
+    const v = u.vel || [0, 0, 0], sp = Math.hypot(v[0], v[1], v[2]);
+    if (u.type === 'rocket') {
+      if (sp > 0.1) m.lookAt(tmpV.set(m.position.x + v[0], m.position.y + v[1], m.position.z + v[2]));
+      u.flame.scale.set(1, 1, 0.7 + Math.random() * 0.6);
+      if (tn - (u.puff || 0) > 35) { u.puff = tn; smoke([m.position.x - v[0] * 0.02, m.position.y - v[1] * 0.02, m.position.z - v[2] * 0.02]); }
+    } else if (u.type === 'prox') {
+      const b = u.body;
+      if (u.flag) { b.rotation.set(u.normal === 0 ? 0 : u.normal === 2 ? Math.PI / 2 : 0, 0, u.normal === 0 ? Math.PI / 2 : 0); }
+      else { b.rotation.x += dt * sp * 1.5; b.rotation.z += dt * sp; }
+      u.led.material.color.set(u.flag === 2 ? (Math.floor(tn / 250) % 2 ? '#ff2a2a' : '#4a0a0a') : '#6a1a1a');
+    } else if (sp > 0.3) { m.rotation.x += dt * sp * 1.8; m.rotation.z += dt * sp * 0.9; }
+  }
+}
+function smoke(p) {
+  const s = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), new THREE.MeshBasicMaterial({ color: '#cfcfcf', transparent: true, opacity: 0.45, depthWrite: false }));
+  s.position.set(...p); scene.add(s); fx.push({ o: s, life: 0.7, max: 0.7, kind: 'smoke', op: 0.45 });
+}
+// gas cloud: a cluster of soft green puffs that swell, drift and fade
+const clouds = [];
+function gasCloud(p, r, durMs) {
+  const g = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: '#a6d65a', transparent: true, opacity: 0.32, depthWrite: false });
+  for (let i = 0; i < 11; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r * (0.38 + Math.random() * 0.22), 12, 9), mat);
+    m.position.set((Math.random() - 0.5) * r * 1.1, Math.random() * r * 0.55, (Math.random() - 0.5) * r * 1.1);
+    m.userData.ph = Math.random() * 6; g.add(m);
+  }
+  g.position.set(p[0], p[1] + 0.2, p[2]); g.scale.setScalar(0.2); scene.add(g);
+  clouds.push({ g, mat, life: durMs / 1000, max: durMs / 1000 });
+}
+function updateClouds(dt, tn) {
+  for (let i = clouds.length - 1; i >= 0; i--) {
+    const c = clouds[i]; c.life -= dt;
+    const age = c.max - c.life;
+    c.g.scale.setScalar(Math.min(1, 0.2 + age * 1.2));
+    c.mat.opacity = 0.32 * Math.min(1, c.life / 1.2);
+    for (const m of c.g.children) m.position.y += Math.sin(tn / 700 + m.userData.ph) * dt * 0.15;
+    c.g.rotation.y += dt * 0.08;
+    if (c.life <= 0) { scene.remove(c.g); for (const m of c.g.children) m.geometry.dispose(); c.mat.dispose(); clouds.splice(i, 1); }
+  }
+}
 function updateFx(dt) {
   for (let i = fx.length - 1; i >= 0; i--) {
     const f = fx[i]; f.life -= dt;
     const k = 1 - f.life / f.max;
     if (f.kind === 'boom') f.o.scale.setScalar(0.5 + k * f.r);
     else if (f.kind === 'spark') f.o.scale.setScalar(1 + k * 2);
+    else if (f.kind === 'smoke') { f.o.scale.setScalar(1 + k * 3.5); f.o.position.y += dt * 0.6; }
     f.o.material.opacity = f.op * (1 - k);
     if (f.life <= 0) { scene.remove(f.o); f.o.geometry.dispose(); f.o.material.dispose(); fx.splice(i, 1); }
   }
@@ -296,6 +390,7 @@ function sfx(kind, vol = 1) {
     case 'melee': env(0.3, 0.08); noise(0.08, 'highpass', 2500); break;
     case 'ui': env(0.15, 0.07); tone(700, 500, 0.07, 'square'); break;
     case 'tap': env(0.07, 0.035); tone(1500, 1100, 0.035, 'square'); break;
+    case 'gas': env(0.3, 1.2); noise(1.2, 'highpass', 3000); break;
   }
 }
 const sfxAt = (kind, p) => sfx(kind, Math.max(0, 1 - len(sub(p, local.pos)) / 70));
@@ -434,16 +529,11 @@ function onSnapshot(s) {
 
   // --- projectiles
   const prSeen = new Set();
-  for (const [id, type, x, y, z] of s.pr) {
+  for (const [id, type, x, y, z, vx, vy, vz, flag, nrm] of s.pr) {
     prSeen.add(id);
     let m = projMeshes.get(id);
-    if (!m) {
-      m = type === 'rocket'
-        ? new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), new THREE.MeshBasicMaterial({ color: '#ff7a22' }))
-        : new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), new THREE.MeshStandardMaterial({ color: '#2f4a22' }));
-      m.position.set(x, y, z); scene.add(m); projMeshes.set(id, m);
-    }
-    m.userData.target = new THREE.Vector3(x, y, z);
+    if (!m) { m = makeProjMesh(type); m.position.set(x, y, z); scene.add(m); projMeshes.set(id, m); }
+    Object.assign(m.userData, { target: new THREE.Vector3(x, y, z), vel: [vx || 0, vy || 0, vz || 0], flag: flag || 0, normal: nrm ?? 1 });
   }
   for (const [id, m] of projMeshes) if (!prSeen.has(id)) { scene.remove(m); projMeshes.delete(id); }
 
@@ -472,6 +562,7 @@ function handleEvent(e) {
         ? `<b style="color:${e.kc}">${esc(e.k)}</b> <i>[${wName(e.w)}${e.head ? ' ✛' : ''}]</i> <b style="color:${e.vc}">${esc(e.v)}</b>`
         : `<b style="color:${e.vc}">${esc(e.v)}</b> <i>self-destructed</i>`);
       break;
+    case 'gas': gasCloud(e.p, e.r, e.d); sfxAt('gas', e.p); break;
     case 'msg': addFeed(`<i>${esc(e.text)}</i>`); break;
     case 'chat': addChat(e); break;
     case 'end': showEnd(e); break;
@@ -485,7 +576,7 @@ function handlePriv(e) {
     if (e.from) { const dx = e.from[0] - local.pos[0], dz = e.from[1] - local.pos[2]; if (dx || dz) { dmgAngle = Math.atan2(-dx, -dz); dmgDirT = 1.2; } }
   } else if (e.e === 'spawn') { yaw = e.yaw; pitch = 0; }
   else if (e.e === 'pick') {
-    toast(e.type === 'weapon' ? `+ ${WEAPONS[e.w].name}` : e.type === 'health' ? '+50 Health' : e.type === 'shield' ? '+50 Shield' : '+2 Grenades');
+    toast(e.type === 'weapon' ? `+ ${WEAPONS[e.w].name}` : e.type === 'health' ? '+50 Health' : e.type === 'shield' ? '+50 Shield' : '+1 of each grenade');
     sfx('pick');
   }
 }
@@ -521,7 +612,7 @@ function computeAim() {
 // ---------- input
 function gatherInput() {
   let mx = 0, mz = 0;
-  const typing = chatOpen || paused;
+  const typing = chatOpen || paused || !me?.alive;
   if (!typing) {
     if (keys.KeyW) mz += 1; if (keys.KeyS) mz -= 1; if (keys.KeyD) mx += 1; if (keys.KeyA) mx -= 1;
   }
@@ -593,10 +684,11 @@ function predictShot() {   // instant local feedback; the server decides real hi
   sfx(W.pellets || W.scope || W.projectile ? 'heavy' : 'shot');
   if (myMesh) { kickRecoil(myMesh); flashMuzzle(myMesh); }
   if (W.projectile) return;
-  const muzzle = myMesh ? muzzleWorld(myMesh) : [local.pos[0], local.pos[1] + CFG.EYE, local.pos[2]], d = len(sub(aimTarget, muzzle));
+  const muzzle = myMesh ? muzzleWorld(myMesh) : [local.pos[0], local.pos[1] + CFG.EYE, local.pos[2]], d0 = len(sub(aimTarget, muzzle));
+  const d = Math.min(d0, W.range), end = d < d0 ? add(muzzle, mul(sub(aimTarget, muzzle), d / d0)) : aimTarget;
   const sp = W.spread * (zoom ? (W.scope ? 0 : 0.4) : 1) * d;
   for (let i = 0; i < (W.pellets || 1); i++)
-    tracer(muzzle, add(aimTarget, [(Math.random() - 0.5) * 2 * sp, (Math.random() - 0.5) * 2 * sp, (Math.random() - 0.5) * 2 * sp]), '#fff3b0');
+    tracer(muzzle, add(end, [(Math.random() - 0.5) * 2 * sp, (Math.random() - 0.5) * 2 * sp, (Math.random() - 0.5) * 2 * sp]), '#fff3b0');
 }
 function doMelee() { sendAct('melee'); sfx('melee'); if (myMesh) swingMelee(myMesh); }
 
@@ -648,6 +740,7 @@ addEventListener('keydown', (e) => {
     case 'KeyR': sendAct('reload'); break;
     case 'KeyQ': sendAct('swap'); break;
     case 'KeyG': sendAct('nade'); break;
+    case 'KeyT': sendAct('nadesel'); break;
     case 'KeyF': doMelee(); break;
     case 'KeyE': sendAct('pickup'); break;
     case 'Digit1': if (me && me.slot !== 0) sendAct('swap'); break;
@@ -665,7 +758,7 @@ initControls({
   isZoom: () => zoom, setZoom: (v) => { zoom = v; },
   act: (a) => sendAct(a), melee: () => doMelee(),
   toggleBoard: () => { boardOpen = !boardOpen; renderBoard(); $('board').style.display = boardOpen ? 'block' : 'none'; },
-  active: () => connected && !paused && !inMenu && !!me,
+  active: () => connected && !paused && !inMenu && !!me?.alive,
   fuel: () => local.fuel, slot: () => me?.slot ?? 0,
   nearPickup: () => {
     if (!me?.alive) return false;
@@ -742,7 +835,12 @@ function updateHUD(dt) {
   const w = me.w[me.slot];
   if (w) setHTML($('ammo'), `<span>${WEAPONS[w.id].name}</span>${w.mag}<small>/${w.reserve}</small>` + (tn < reloadEnd ? '<div class="rl">RELOADING</div>' : ''));
   setHTML($('slots'), me.w.map((x, i) => `<div class="slot ${i === me.slot ? 'on' : ''}" data-i="${i}">${i + 1} ${x ? WEAPONS[x.id].name : '—'}</div>`).join(''));
-  setHTML($('nades'), `💣 ${me.gn}`);
+  const gn = me.gn || {}, gs = me.gs || 'frag';
+  setHTML($('nades'), NADE_TYPES.map((k) => `<span class="ng ${k === gs ? 'on' : ''}">${NADES[k].short} ${gn[k] || 0}</span>`).join(''));
+  const nt = document.querySelector('#touch [data-id=ntype]');
+  if (nt) setHTML(nt, `${NADES[gs].short} ×${gn[gs] || 0} ⟳`);
+  const dead = !me.alive;
+  if (dead !== wasDead) { wasDead = dead; $('touch').classList.toggle('deadctl', dead); if (dead) { resetTouch(); zoom = false; } }
   const tl = Math.max(0, timeLeft - (tn - timeLeftAt));
   $('timer').textContent = state === 'ended' ? 'Next match ' + fmt(tl) : fmt(tl);
   if (state === 'ended') $('endt').textContent = `Next match in ${fmt(tl)}`;
@@ -843,7 +941,7 @@ function render(dt, alpha, tn) {
     if (r.label) { r.label.scale.set(2 * k, 0.5 * k, 1); r.label.position.y = 2.15 + 0.06 * k + 0.2 * k + 0.12; }
   }
   for (const [id, m] of pickMeshes) { m.rotation.y += dt * 2; m.position.y = m.userData.baseY + Math.sin(tn / 300 + id) * 0.1; }
-  for (const m of projMeshes.values()) if (m.userData.target) m.position.lerp(m.userData.target, 1 - Math.exp(-dt * 20));
+  updateProjMeshes(dt, tn); updateClouds(dt, tn);
 
   updateFx(dt);
   updateControls(dt);
@@ -852,38 +950,37 @@ function render(dt, alpha, tn) {
   renderer.render(scene, camera);
 }
 // grenade trajectory preview while the 💣 button is held (same physics as the server)
-let arcLine = null, arcRing = null;
-const ARC_N = 160;
+let arcLine = null, arcRing = null, arcType = '';
+const ARC_N = 200;
 function updateNadeArc() {
-  const show = !!(touch.nade && me?.alive && me.gn > 0 && state === 'playing');
+  const gs = me?.gs || 'frag', have = (me?.gn?.[gs] || 0) > 0 || NADE_TYPES.some((k) => me?.gn?.[k] > 0);
+  const show = !!(touch.nade && me?.alive && have && state === 'playing');
   if (!arcLine) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARC_N * 3), 3));
-    arcLine = new THREE.Line(g, new THREE.LineBasicMaterial({ color: '#ffd27a', transparent: true, opacity: 0.95, depthTest: false }));
+    arcLine = new THREE.Points(g, new THREE.PointsMaterial({ color: '#ffe08a', size: 7, sizeAttenuation: false, transparent: true, opacity: 0.95, depthTest: false }));
     arcLine.renderOrder = 10; arcLine.frustumCulled = false; scene.add(arcLine);
-    arcRing = new THREE.Mesh(new THREE.RingGeometry(CFG.NADE_R - 0.3, CFG.NADE_R, 48), new THREE.MeshBasicMaterial({ color: '#ff6a3a', transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+    arcRing = new THREE.Mesh(new THREE.RingGeometry(0.88, 1, 48), new THREE.MeshBasicMaterial({ color: '#ff6a3a', transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
     arcRing.rotation.x = -Math.PI / 2; arcRing.renderOrder = 9; scene.add(arcRing);
   }
   arcLine.visible = arcRing.visible = show;
   if (!show) return;
-  const d = aimDir(aimYaw, aimPitch + 0.15), h = 1 / 60;
-  const p = [local.pos[0] + d[0] * 0.6, local.pos[1] + CFG.EYE + d[1] * 0.6, local.pos[2] + d[2] * 0.6];
-  const v = [d[0] * CFG.NADE_SPEED + local.vel[0] * 0.5, d[1] * CFG.NADE_SPEED + local.vel[1] * 0.5, d[2] * CFG.NADE_SPEED + local.vel[2] * 0.5];
-  const arr = arcLine.geometry.attributes.position.array, steps = Math.min(ARC_N, Math.round((CFG.NADE_FUSE / 1000) * 60));
-  for (let i = 0; i < steps; i++) {
-    arr[i * 3] = p[0]; arr[i * 3 + 1] = p[1]; arr[i * 3 + 2] = p[2];
-    const n = Math.max(1, Math.ceil(Math.hypot(...v) * h / 0.25)), hh = h / n;
-    for (let j = 0; j < n; j++) {
-      v[1] -= CFG.G * hh;
-      for (let a = 0; a < 3; a++) {
-        const old = p[a]; p[a] += v[a] * hh;
-        if (MAPC.boxes.some((b) => inBox(p, b))) { p[a] = old; v[a] *= -0.45; v[(a + 1) % 3] *= 0.8; v[(a + 2) % 3] *= 0.8; }
-      }
-    }
+  const ty = (me.gn[gs] || 0) > 0 ? gs : NADE_TYPES.find((k) => me.gn[k] > 0), N = NADES[ty];
+  if (ty !== arcType) { arcType = ty; arcRing.scale.setScalar(ty === 'prox' ? N.trig : N.r); arcRing.material.color.set(ty === 'gas' ? '#a6d65a' : ty === 'prox' ? '#ff3a3a' : '#ff6a3a'); }
+  const n = nadeLaunch(local.pos, local.vel, aimYaw, aimPitch, ty), h = 1 / 60;
+  const life = ty === 'prox' ? 3 : N.fuse / 1000, steps = Math.min(ARC_N, Math.round(life * 60));
+  const arr = arcLine.geometry.attributes.position.array;
+  let k = 0;
+  for (let i = 0; i < steps && k < ARC_N; i++) {
+    if (i % 3 === 0) { arr[k * 3] = n.pos[0]; arr[k * 3 + 1] = n.pos[1]; arr[k * 3 + 2] = n.pos[2]; k++; }   // a dot every 50 ms of flight
+    if (n.stuck) break;
+    stepNade(n, h, MAPC, ty);
   }
-  arcLine.geometry.setDrawRange(0, steps); arcLine.geometry.attributes.position.needsUpdate = true;
-  const floor = rayWorld([p[0], p[1] + 0.2, p[2]], [0, -1, 0], 40, MAPC);
-  arcRing.position.set(p[0], p[1] + 0.2 - Math.min(floor, 40) + 0.06, p[2]);
+  for (let q = k; q < ARC_N; q++) { arr[q * 3] = n.pos[0]; arr[q * 3 + 1] = n.pos[1]; arr[q * 3 + 2] = n.pos[2]; }
+  arcLine.geometry.setDrawRange(0, k); arcLine.geometry.attributes.position.needsUpdate = true;
+  const floor = rayWorld([n.pos[0], n.pos[1] + 0.2, n.pos[2]], [0, -1, 0], 40, MAPC);
+  arcRing.position.set(n.pos[0], n.pos[1] + 0.2 - Math.min(floor, 40) + 0.06, n.pos[2]);
 }
+
 
 // ---------- leaving a match / returning to the menu
 function leaveMatch() {

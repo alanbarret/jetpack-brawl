@@ -18,7 +18,7 @@ export const WEAPONS = {
   pistol:  { name: 'Pistol',  dmg: 20,  rate: 4,   mag: 12, reserve: 48,  reload: 1.2, spread: 0.012, range: 80,  len: 0.45, color: '#bbbbbb' },
   smg:     { name: 'SMG',     dmg: 12,  rate: 12,  mag: 30, reserve: 120, reload: 1.6, spread: 0.04,  range: 50,  len: 0.6,  color: '#66ccff' },
   ar:      { name: 'Rifle',   dmg: 18,  rate: 9,   mag: 30, reserve: 90,  reload: 1.9, spread: 0.02,  range: 100, len: 0.8,  color: '#88dd66' },
-  shotgun: { name: 'Shotgun', dmg: 10,  rate: 1.2, mag: 6,  reserve: 24,  reload: 2.2, spread: 0.09,  range: 30,  len: 0.7,  color: '#ffaa44', pellets: 8 },
+  shotgun: { name: 'Shotgun', dmg: 11,  rate: 1.2, mag: 6,  reserve: 24,  reload: 2.2, spread: 0.09,  range: 16,  len: 0.7,  color: '#ffaa44', pellets: 8, falloff: [5, 16, 0.25] },
   sniper:  { name: 'Sniper',  dmg: 95,  rate: 0.8, mag: 5,  reserve: 15,  reload: 2.5, spread: 0.06,  range: 300, len: 1.2,  color: '#cc66ff', scope: true },
   rocket:  { name: 'Rocket',  dmg: 110, rate: 0.7, mag: 2,  reserve: 6,   reload: 2.8, spread: 0,     range: 0,   len: 1.0,  color: '#ff5544', projectile: true, speed: 35, radius: 5 },
 };
@@ -140,4 +140,46 @@ export function stepPlayer(s, inp, dt, map = MAP) {
     moveAxis(s, 0, s.vel[0] * h, map); moveAxis(s, 2, s.vel[2] * h, map); moveAxis(s, 1, s.vel[1] * h, map);
   }
   if (s.onGround) { s.hoverArmed = false; s.thrusting = false; }
+}
+
+// ---------- Grenades (Mini Militia style): frag, gas and proximity mine.
+// One shared simulation so the server and the client's throw preview always agree.
+export const NADES = {
+  frag: { name: 'Frag',  short: 'FRAG',  speed: 19, fuse: 2600, dmg: 100, r: 5.5, bounce: 0.3 },
+  gas:  { name: 'Gas',   short: 'GAS',   speed: 18, fuse: 1500, dps: 16, r: 4.6, dur: 6000, bounce: 0.25 },
+  prox: { name: 'Proxy', short: 'PROXY', speed: 17, arm: 900, trig: 2.6, dmg: 95, r: 4.6, life: 30000, bounce: 0 },
+};
+export const NADE_TYPES = ['frag', 'gas', 'prox'];
+export const NADE_MAX = 3;
+const NADE_G = 20, NADE_DRAG = 0.12;
+// initial state of a thrown grenade from the thrower's eye, aim and velocity
+export function nadeLaunch(pos, vel, yaw, pitch, type) {
+  const d = aimDir(yaw, Math.min(1.45, pitch + 0.12)), sp = NADES[type].speed;
+  return {
+    pos: [pos[0] + d[0] * 0.6, pos[1] + CFG.EYE + d[1] * 0.6, pos[2] + d[2] * 0.6],
+    vel: [d[0] * sp + vel[0] * 0.4, d[1] * sp + vel[1] * 0.4, d[2] * sp + vel[2] * 0.4],
+    stuck: false,
+  };
+}
+// advance a grenade: gravity, air drag, bounces with energy loss, rolling friction; proximity mines stick on first contact
+export function stepNade(n, dt, map, type) {
+  if (n.stuck) return;
+  const spd = Math.hypot(n.vel[0], n.vel[1], n.vel[2]);
+  const steps = Math.max(1, Math.ceil((spd * dt) / 0.2)), h = dt / steps, N = NADES[type];
+  for (let i = 0; i < steps; i++) {
+    n.vel[1] -= NADE_G * h;
+    const dk = 1 - NADE_DRAG * h; n.vel[0] *= dk; n.vel[1] *= dk; n.vel[2] *= dk;
+    for (let a = 0; a < 3; a++) {
+      const old = n.pos[a]; n.pos[a] += n.vel[a] * h;
+      if (!map.boxes.some((b) => inBox(n.pos, b))) continue;
+      n.pos[a] = old;
+      if (type === 'prox') { n.stuck = true; n.vel = [0, 0, 0]; n.normal = a; return; }
+      if (a === 1 && n.vel[1] < 0) {                      // floor
+        const impact = -n.vel[1];
+        n.vel[1] = impact > 2.5 ? impact * N.bounce : 0;
+        const f = impact > 2.5 ? 0.55 : Math.exp(-9 * h);   // impact scrub, then rolling friction
+        n.vel[0] *= f; n.vel[2] *= f;
+      } else { n.vel[a] *= -N.bounce * 1.3; n.vel[(a + 1) % 3] *= 0.85; n.vel[(a + 2) % 3] *= 0.85; }
+    }
+  }
 }

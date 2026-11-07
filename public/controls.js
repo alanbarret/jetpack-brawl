@@ -1,6 +1,6 @@
 // public/controls.js — touch controls for phones/tablets (Android first).
 // Dual joysticks, analog JET lever, swipe-to-dive, fuel ring, weapon wheel, grenade hold-to-aim,
-// FIRE drag-aim + double-tap zoom, gyro aiming, vibration, left-handed mode and a layout editor.
+// FIRE drag-aim, gyro aiming, vibration, left-handed mode and a layout editor.
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -13,27 +13,27 @@ export const CDEF = {
 };
 let nearPick = false;
 const hiddenBtn = (id) => (id === 'reload' && S.autoreload) || (id === 'pickup' && (S.autopick || !nearPick));
-const btnW = (id, size) => (id === 'pickup' ? size * 2.5 : size);
+const btnW = (id, size) => (id === 'pickup' ? size * 2.5 : id === 'ntype' ? size * 3.3 : size);
 
 // ---------- layout: [x, y, scale] as fractions of the screen (right-handed; mirrored for left-handed)
 // PUBG-style: big FIRE on the right (drag it to aim), small FIRE on the left above the move stick,
 // scope + reload around the right FIRE, JET bottom-right, grenade/melee bottom, weapon slots bottom-centre.
-const BASE = { fire: 84, lfire: 68, jet: 76, nade: 54, melee: 54, reload: 54, pickup: 46, zoom: 54, board: 44, move: 124, aim: 124 };
-const LABEL = { fire: 'FIRE', lfire: 'FIRE', jet: 'JET', nade: '💣', melee: '🔪', reload: 'R', pickup: 'PICK UP', zoom: '🔍', board: '☰', move: 'MOVE', aim: 'AIM' };
+const BASE = { ntype: 30, fire: 84, lfire: 68, jet: 76, nade: 54, melee: 54, reload: 54, pickup: 46, zoom: 54, board: 44, move: 124, aim: 124 };
+const LABEL = { ntype: 'FRAG ⟳', fire: 'FIRE', lfire: 'FIRE', jet: 'JET', nade: '💣', melee: '🔪', reload: 'R', pickup: 'PICK UP', zoom: '🔍', board: '☰', move: 'MOVE', aim: 'AIM' };
 export const PRESETS = {
   classic: {
     fire: [0.86, 0.5, 1], lfire: [0.09, 0.46, 1], zoom: [0.955, 0.36, 1], reload: [0.75, 0.36, 1],
-    jet: [0.92, 0.82, 1], melee: [0.8, 0.885, 1], nade: [0.685, 0.885, 1], pickup: [0.62, 0.58, 1], board: [0.159, 0.082, 1],
+    jet: [0.92, 0.82, 1], melee: [0.8, 0.885, 1], nade: [0.685, 0.885, 1], ntype: [0.685, 0.745, 1], pickup: [0.62, 0.58, 1], board: [0.159, 0.082, 1],
     move: [0.15, 0.75, 1], aim: [0.56, 0.7, 1],
   },
   thumbs: {
     fire: [0.85, 0.55, 1.1], lfire: [0.1, 0.5, 1.05], zoom: [0.95, 0.4, 1], reload: [0.74, 0.4, 1],
-    jet: [0.915, 0.83, 1.1], melee: [0.79, 0.89, 1], nade: [0.675, 0.89, 1], pickup: [0.6, 0.62, 1], board: [0.159, 0.082, 1],
+    jet: [0.915, 0.83, 1.1], melee: [0.79, 0.89, 1], nade: [0.675, 0.89, 1], ntype: [0.675, 0.75, 1], pickup: [0.6, 0.62, 1], board: [0.159, 0.082, 1],
     move: [0.16, 0.76, 1.05], aim: [0.55, 0.72, 1],
   },
   claw: {
     fire: [0.86, 0.55, 1], lfire: [0.27, 0.3, 1], jet: [0.8, 0.27, 1], zoom: [0.93, 0.3, 0.95], reload: [0.69, 0.27, 0.95],
-    melee: [0.92, 0.84, 1], nade: [0.8, 0.86, 1], pickup: [0.62, 0.58, 1], board: [0.159, 0.082, 1],
+    melee: [0.92, 0.84, 1], nade: [0.8, 0.86, 1], ntype: [0.8, 0.72, 1], pickup: [0.62, 0.58, 1], board: [0.159, 0.082, 1],
     move: [0.15, 0.75, 1], aim: [0.6, 0.66, 1],
   },
 };
@@ -58,7 +58,7 @@ export function applyLayout() {
   for (const b of document.querySelectorAll('#touch .tbtn')) {
     const id = b.dataset.id, p = place(id);
     const w = btnW(id, p.size);
-    Object.assign(b.style, { left: p.x - w / 2 + 'px', top: p.y - p.size / 2 + 'px', width: w + 'px', height: p.size + 'px', fontSize: Math.round(p.size * (id === 'pickup' ? 0.3 : BASE[id] > 60 ? 0.21 : 0.33)) + 'px' });
+    Object.assign(b.style, { left: p.x - w / 2 + 'px', top: p.y - p.size / 2 + 'px', width: w + 'px', height: p.size + 'px', fontSize: Math.round(p.size * (id === 'pickup' ? 0.3 : id === 'ntype' ? 0.4 : BASE[id] > 60 ? 0.21 : 0.33)) + 'px' });
     b.style.display = hiddenBtn(id) ? 'none' : 'flex';
   }
   for (const k of ['move', 'aim']) {
@@ -106,6 +106,7 @@ function onMotion(e) {
 const mv = { id: null, ox: 0, oy: 0 };                         // move stick
 const lk = { id: null, mode: null, ox: 0, oy: 0, lx: 0, ly: 0, ax: 0, ay: 0 };   // aim stick / swipe look
 let fireTouch = null, lastFireTap = 0, wheel = null, fires = 0;
+const buttonResets = [];
 
 function lookGain() { return 0.006 * S.sens * (api.isZoom() ? S.zsens : 1) * api.lookScale(); }
 function swipe(dx, dy) { const g = lookGain(); api.look(-dx * g, -dy * g); }
@@ -113,6 +114,9 @@ function refreshAiming() { T.aiming = mv.id !== null || lk.id !== null || fireTo
 
 function canvasStart(e) {
   e.preventDefault();
+  const live = new Set([...e.touches].map((q) => q.identifier));
+  const stale = [mv.id, lk.id].filter((id) => id !== null && !live.has(id)).map((identifier) => ({ identifier }));
+  if (stale.length) canvasEnd({ changedTouches: stale });
   for (const t of e.changedTouches) {
     const x = t.clientX, y = t.clientY;
     const moveSide = S.left ? x > innerWidth * 0.6 : x < innerWidth * 0.4;
@@ -197,14 +201,16 @@ function bindButton(b) {
   let sx = 0, sy = 0, lx = 0, ly = 0, tid = null, holdTimer = null;
   b.addEventListener('touchstart', (e) => {
     e.preventDefault(); e.stopPropagation();
-    if (tid !== null) return;
+    if (tid !== null) {
+      if ([...e.touches].some((q) => q.identifier === tid)) return;   // still genuinely held
+      finish(true);                                                  // lost touch (system gesture etc.) — recover
+    }
     const t = e.changedTouches[0]; tid = t.identifier; sx = lx = t.clientX; sy = ly = t.clientY;
     press(b);
     switch (id) {
       case 'lfire': fires++; T.fire = true; break;
       case 'fire': {
         fires++; T.fire = true; fireTouch = tid;
-        const n = performance.now(); if (n - lastFireTap < 300) { api.setZoom(!api.isZoom()); lastFireTap = 0; } else lastFireTap = n;
         break;
       }
       case 'jet': T.jet = 0.85; T.down = false; b.classList.add('lever'); lever(b, 0); break;
@@ -214,6 +220,7 @@ function bindButton(b) {
       case 'zoom': api.setZoom(!api.isZoom()); break;
       case 'board': api.toggleBoard(); break;
       case 'melee': api.melee(); break;
+      case 'ntype': api.act('nadesel'); break;
       default: api.act(id);
     }
     refreshAiming();
@@ -233,7 +240,11 @@ function bindButton(b) {
   }, { passive: false });
   const end = (e, cancel) => {
     const t = [...e.changedTouches].find((q) => q.identifier === tid); if (!t) return;
-    e.preventDefault(); tid = null; release(b);
+    e.preventDefault(); finish(cancel);
+  };
+  function finish(cancel) {
+    if (tid === null) return;
+    tid = null; release(b);
     switch (id) {
       case 'lfire': fires = Math.max(0, fires - 1); T.fire = fires > 0; break;
       case 'fire': fires = Math.max(0, fires - 1); T.fire = fires > 0; fireTouch = null; break;
@@ -246,7 +257,8 @@ function bindButton(b) {
         break;
     }
     refreshAiming();
-  };
+  }
+  buttonResets.push(() => finish(true));
   b.addEventListener('touchend', (e) => end(e, false), { passive: false });
   b.addEventListener('touchcancel', (e) => end(e, true), { passive: false });
 }
@@ -279,6 +291,7 @@ function closeWheel(apply) {
 
 export function resetTouch() {
   Object.assign(T, { mx: 0, mz: 0, sp: false, fire: false, sfire: false, jet: 0, down: false, nade: false, aiming: false, runLock: false });
+  for (const r of buttonResets) r();
   fires = 0; mv.lockArm = false; if ($('runlock')) $('runlock').style.display = 'none';
   mv.id = lk.id = fireTouch = null; lk.ax = lk.ay = 0;
   if (wheel) closeWheel(false);
@@ -378,7 +391,7 @@ function drawEditor() {
   for (const d of $('edarea').children) {
     const id = d.dataset.id, p = place(id, ed.l);
     const hidden = (id === 'reload' && S.autoreload) || (id === 'pickup' && S.autopick);
-    d.classList.toggle('pill', id === 'pickup');
+    d.classList.toggle('pill', id === 'pickup'); d.classList.toggle('chip', id === 'ntype');
     const w = btnW(id, p.size);
     Object.assign(d.style, { left: p.x - w / 2 + 'px', top: p.y - p.size / 2 + 'px', width: w + 'px', height: p.size + 'px',
       fontSize: Math.round(p.size * (BASE[id] > 60 ? 0.2 : 0.32)) + 'px', opacity: id === 'move' || id === 'aim' ? 1 : ed.opa });
@@ -386,14 +399,14 @@ function drawEditor() {
   }
 }
 function closeEditor(save) {
-  if (save) { S.layout = ed.l; S.opa = ed.opa; api.store.set('c_layout3', ed.l); api.store.set('c_opa', ed.opa); api.toast('Controls layout saved'); }
+  if (save) { S.layout = ed.l; S.opa = ed.opa; api.store.set('c_layout4', ed.l); api.store.set('c_opa', ed.opa); api.toast('Controls layout saved'); }
   $('ctledit').style.display = 'none'; ed = null; applyLayout(); api.sfx('ui');
 }
 
 // ---------- init
 export function initControls(a) {
   api = a; S = a.settings; T = a.touch;
-  for (const k in CDEF) if (!(k in S)) S[k] = a.store.get('c_' + (k === 'layout' ? 'layout3' : k), CDEF[k]);
+  for (const k in CDEF) if (!(k in S)) S[k] = a.store.get('c_' + (k === 'layout' ? 'layout4' : k), CDEF[k]);
   resetTouch();
   addEventListener('resize', () => setTimeout(applyLayout, 120));
   screen.orientation?.addEventListener?.('change', () => setTimeout(applyLayout, 200));
@@ -404,5 +417,6 @@ export function initControls(a) {
   cv.addEventListener('touchend', canvasEnd); cv.addEventListener('touchcancel', canvasEnd);
   for (const b of document.querySelectorAll('#touch .tbtn')) bindButton(b);
   document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('visibilitychange', () => { if (document.hidden) resetTouch(); });   // app switched / shade pulled down
   if (S.gyro) enableGyro();       // Android needs no permission; iOS re-asks on the toggle
 }
