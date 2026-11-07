@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Jetpack Brawl 3D</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:system-ui,sans-serif;color:#fff;user-select:none;-webkit-user-select:none;touch-action:none}
+canvas{display:block}
+.ov{position:fixed;inset:0;pointer-events:none}
+#join{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(#2b3a2acc,#0d120dee);z-index:20}
+#join .card{background:rgba(0,0,0,.55);padding:28px;border-radius:14px;width:min(92vw,400px);text-align:center;border:1px solid #ffffff22}
+#join h1{font-size:30px;letter-spacing:2px;margin-bottom:4px;color:#ffcf4a}
+#join p{opacity:.7;font-size:13px;margin-bottom:16px}
+#join input{width:100%;padding:12px;margin:6px 0;border-radius:8px;border:1px solid #fff3;background:#111;color:#fff;font-size:16px}
+#join button{width:100%;padding:13px;margin-top:10px;border:0;border-radius:8px;background:#ffcf4a;color:#222;font-weight:800;font-size:17px;cursor:pointer}
+#join .keys{font-size:12px;opacity:.65;margin-top:14px;line-height:1.6;text-align:left}
+#hud{display:none}
+#mm{position:fixed;top:10px;left:10px;border-radius:8px;width:140px;height:140px}
+.bars{position:fixed;left:16px;bottom:16px;width:240px}
+.bar{height:14px;background:#0008;border-radius:7px;margin-top:4px;overflow:hidden;position:relative}
+.bar i{display:block;height:100%;width:0;transition:width .1s}
+#hpf{background:linear-gradient(90deg,#e33,#f84)}#arf{background:#48f}#fuf{background:#4cf}
+#hpt{position:absolute;right:8px;top:0;font-size:11px;font-weight:700;line-height:14px}
+.lbl{font-size:10px;opacity:.75;margin-top:6px;letter-spacing:1px}
+#ammo{position:fixed;right:18px;bottom:16px;text-align:right;font-size:34px;font-weight:800;text-shadow:0 2px 4px #000}
+#ammo span{font-size:14px;opacity:.8;display:block}#ammo small{font-size:18px;opacity:.7}
+.rl{font-size:13px;color:#ffcf4a}
+#slots{position:fixed;right:18px;bottom:100px;display:flex;gap:6px}
+.slot{background:#0007;padding:5px 9px;border-radius:6px;font-size:12px;opacity:.6}
+.slot.on{opacity:1;outline:2px solid #ffcf4a}
+#nades{position:fixed;right:18px;bottom:136px;font-size:15px}
+#timer{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#0008;padding:6px 14px;border-radius:8px;font-weight:700;font-size:18px}
+#room{position:fixed;top:46px;left:50%;transform:translateX(-50%);font-size:11px;opacity:.7}
+#feed{position:fixed;top:10px;right:12px;text-align:right;font-size:13px}
+#feed div{background:#0007;padding:4px 8px;border-radius:5px;margin-bottom:4px}
+#scope{position:fixed;inset:0;display:none;background:radial-gradient(circle,transparent 32%,#000 33%)}
+#cross{position:fixed;left:50%;top:50%;width:22px;height:22px;transform:translate(-50%,-50%)}
+#cross:before,#cross:after{content:'';position:absolute;background:#fff;box-shadow:0 0 2px #000}
+#cross:before{left:10px;top:0;width:2px;height:22px}#cross:after{top:10px;left:0;height:2px;width:22px}
+#hitm{position:fixed;left:50%;top:50%;width:34px;height:34px;transform:translate(-50%,-50%) rotate(45deg);opacity:0}
+#hitm:before,#hitm:after{content:'';position:absolute;background:#fff}
+#hitm:before{left:16px;top:0;width:2px;height:34px}#hitm:after{top:16px;left:0;height:2px;width:34px}
+#hitm.head:before,#hitm.head:after{background:#ffcf4a}#hitm.kill:before,#hitm.kill:after{background:#f33}
+#vig{position:fixed;inset:0;box-shadow:inset 0 0 150px 40px rgba(255,0,0,.8);opacity:0}
+#ddir{position:fixed;left:50%;top:50%;width:0;height:0;opacity:0}
+#ddir:before{content:'';position:absolute;left:-14px;top:-160px;border:14px solid transparent;border-bottom:26px solid rgba(255,40,40,.9)}
+#dead,#end{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;background:#0006;font-size:28px;font-weight:800}
+#end{background:#000b;z-index:5}#end table{font-size:16px;margin-top:14px;border-collapse:collapse}#end td{padding:4px 14px}
+#board{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#000c;padding:16px 20px;border-radius:12px;display:none;min-width:300px;z-index:6}
+#board table{width:100%;border-collapse:collapse}#board th,#board td{padding:5px 8px;text-align:left}#board tr.me{background:#ffffff18}
+#boardr{font-size:11px;opacity:.6;margin-top:10px;word-break:break-all}
+#prot{position:fixed;top:72px;left:50%;transform:translateX(-50%);color:#8cf;font-weight:700;display:none}
+#toast{position:fixed;top:60%;left:50%;transform:translateX(-50%);font-weight:700;opacity:0;transition:opacity .3s;text-shadow:0 2px 3px #000}
+#chat{position:fixed;left:16px;bottom:130px;width:320px;font-size:13px}
+#chat div{background:#0006;padding:3px 7px;border-radius:4px;margin-top:3px}
+#chatin{display:none;width:100%;margin-top:4px;padding:7px;border-radius:6px;border:0;background:#000b;color:#fff;pointer-events:auto}
+#clickhint{position:fixed;top:38%;left:50%;transform:translateX(-50%);background:#000a;padding:10px 16px;border-radius:8px;display:none}
+#status{position:fixed;top:45%;left:50%;transform:translateX(-50%);background:#a00c;padding:14px 20px;border-radius:8px;display:none;z-index:30}
+#touch{display:none}
+.tbtn{position:fixed;width:54px;height:54px;border-radius:50%;background:#ffffff26;border:2px solid #ffffff55;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;pointer-events:auto;z-index:10}
+.tbtn.big{width:78px;height:78px}.tbtn.down{background:#ffcf4a88}
+#joy{position:fixed;width:110px;height:110px;margin:-55px 0 0 -55px;border-radius:50%;background:#ffffff1a;border:2px solid #ffffff44;display:none;pointer-events:none}
+#knob{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;background:#ffffff66}
+@media (pointer:coarse){
+  #mm{width:110px;height:110px}
+  .bars{width:150px;bottom:auto;top:128px;left:10px}
+  #feed{top:250px;left:10px;right:auto;text-align:left;font-size:11px}
+  #ammo{bottom:auto;top:10px;font-size:24px}#slots{bottom:auto;top:72px}#nades{bottom:auto;top:106px}
+  #chat{display:none}
+}
+</style>
+</head>
+<body>
+<div id="join"><div class="card">
+  <h1>JETPACK BRAWL 3D</h1><p>Multiplayer jetpack arena shooter</p>
+  <input id="name" maxlength="16" placeholder="Your name">
+  <input id="roomin" maxlength="8" placeholder="Room code (blank = PUBLIC)">
+  <button id="play">PLAY</button>
+  <div class="keys"><b>Desktop:</b> WASD move · Space jetpack · Shift sprint · Mouse aim · Left-click fire · Right-click zoom · R reload · Q / wheel swap · G grenade · F melee · E take weapon · Tab scores · Enter chat<br>
+  <b>Mobile:</b> left side = move stick · drag right side = aim · buttons for the rest</div>
+</div></div>
+
+<div id="hud" class="ov">
+  <canvas id="mm" width="140" height="140"></canvas>
+  <div id="timer">8:00</div><div id="room"></div>
+  <div id="feed"></div>
+  <div id="scope"></div><div id="cross"></div><div id="hitm"></div><div id="vig"></div><div id="ddir"></div>
+  <div class="bars">
+    <div class="lbl">HEALTH</div><div class="bar"><i id="hpf"></i><span id="hpt"></span></div>
+    <div class="lbl">SHIELD</div><div class="bar" style="height:6px"><i id="arf"></i></div>
+    <div class="lbl">JETPACK</div><div class="bar" style="height:10px"><i id="fuf"></i></div>
+  </div>
+  <div id="nades"></div><div id="slots"></div><div id="ammo"></div>
+  <div id="prot">SPAWN PROTECTION</div><div id="toast"></div>
+  <div id="chat"><div id="chatlog"></div><input id="chatin" maxlength="120" placeholder="Say something… (Enter)"></div>
+  <div id="dead"><div id="deadt"></div></div>
+  <div id="board"><table id="boardt"></table><div id="boardr"></div></div>
+  <div id="end"><div id="endw"></div><table id="endl"></table><div id="endt" style="font-size:14px;margin-top:12px;opacity:.7"></div></div>
+  <div id="clickhint">Click to play</div>
+</div>
+
+<div id="touch">
+  <div id="joy"><div id="knob"></div></div>
+  <div class="tbtn big" data-hold="fire" style="right:24px;bottom:120px">FIRE</div>
+  <div class="tbtn big" data-hold="jet" style="right:120px;bottom:24px">JET</div>
+  <div class="tbtn" data-act="melee" style="right:30px;bottom:40px">🔪</div>
+  <div class="tbtn" data-act="nade" style="right:215px;bottom:50px">💣</div>
+  <div class="tbtn" data-act="reload" style="right:24px;bottom:215px">R</div>
+  <div class="tbtn" data-act="swap" style="right:95px;bottom:210px">⇄</div>
+  <div class="tbtn" data-act="pickup" style="right:125px;bottom:130px">E</div>
+  <div class="tbtn" data-act="zoom" style="right:24px;bottom:285px">🔍</div>
+  <div class="tbtn" data-act="board" style="left:125px;top:10px;width:44px;height:44px">☰</div>
+</div>
+<div id="status"></div>
+
+<script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }</script>
+<script type="module" src="/game.js"></script>
+</body>
+</html>
