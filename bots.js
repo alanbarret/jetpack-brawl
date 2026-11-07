@@ -1,5 +1,5 @@
 // bots.js — server-side bot AI. Bots are ordinary players driven by botThink() each server tick.
-import { CFG, WEAPONS, MAP, stepPlayer, rayWorld, clamp } from './public/shared.js';
+import { CFG, WEAPONS, stepPlayer, rayWorld, clamp } from './public/shared.js';
 
 export const DIFFS = {
   easy:   { aim: 0.075, turn: 3.2, react: 650, rest: 1.6, nade: 9000, view: 55 },
@@ -58,7 +58,7 @@ function pickGoal(room, p) {
     if (d < bd) { bd = d; best = k; }
   }
   if (best && bd < 80) return { pos: [...best.pos], pick: true };
-  const pool = Math.random() < 0.5 ? MAP.spawns : MAP.pickups.map((x) => x.pos);
+  const pool = Math.random() < 0.5 ? room.map.spawns : room.map.pickups.map((x) => x.pos);
   return { pos: [...pool[Math.floor(Math.random() * pool.length)]], pick: false };
 }
 
@@ -76,7 +76,7 @@ export function botThink(room, p, dt, t) {
       const dv = [c[0] - eye[0], c[1] - eye[1], c[2] - eye[2]];
       const d = Math.hypot(dv[0], dv[1], dv[2]);
       if (d > D.view || d < 0.01) continue;
-      if (rayWorld(eye, [dv[0] / d, dv[1] / d, dv[2] / d], d) < d - 0.6) continue;
+      if (rayWorld(eye, [dv[0] / d, dv[1] / d, dv[2] / d], d, room.map) < d - 0.6) continue;
       if (q.id === ai.target) curVisible = true;
       if (d < bd) { bd = d; best = q; }
     }
@@ -177,7 +177,7 @@ export function botThink(room, p, dt, t) {
   const sy = Math.sin(ai.yaw), cy = Math.cos(ai.yaw);
   let mx = cy * wx - sy * wz, mz = -sy * wx - cy * wz;
   const ml = Math.hypot(mx, mz); if (ml > 1) { mx /= ml; mz /= ml; }
-  stepPlayer(p, { mx, mz, yaw: ai.yaw, jump: jet, jet, sprint, down }, dt);
+  stepPlayer(p, { mx, mz, yaw: ai.yaw, jump: jet, jet, sprint, down }, dt, room.map);
   p.jet = p.thrusting;
 
   // ---- combat

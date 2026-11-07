@@ -4,6 +4,7 @@ export const CFG = {
   R: 0.4, H: 1.8, EYE: 1.6,
   WALK: 6, SPRINT: 9, JUMP: 7.5, G: 22, JET: 38, MAX_UP: 11, MAX_FALL: 30,
   FUEL_DRAIN: 0.25, FUEL_REGEN: 0.15, FUEL_DELAY: 0.8,
+  BRAKE_START: 9, BRAKE_SPEED: 4.5, BRAKE_DRAIN: 0.09,
   REGEN_DELAY: 4000, REGEN_RATE: 8,
   RESPAWN_MS: 3000, PROTECT_MS: 2000,
   KILL_LIMIT: 20, MATCH_MS: 8 * 60 * 1000, END_MS: 10000, MAX_PLAYERS: 12,
@@ -23,37 +24,10 @@ export const WEAPONS = {
 };
 export const WEAPON_POOL = ['smg', 'ar', 'shotgun', 'sniper', 'rocket'];
 
-// ---------- Map: axis-aligned boxes. B(centerX, bottomY, centerZ, width, height, depth, color|null=invisible)
-const boxes = [];
-function B(cx, y, cz, w, h, d, c = '#8a7f6a') {
-  boxes.push({ min: [cx - w / 2, y, cz - d / 2], max: [cx + w / 2, y + h, cz + d / 2], c });
-}
-B(0, -1, 0, 90, 1, 90, '#6b7d52');                         // floor
-B(0, 0, -45.5, 92, 30, 1, '#4a463e'); B(0, 0, 45.5, 92, 30, 1, '#4a463e');
-B(-45.5, 0, 0, 1, 30, 92, '#4a463e'); B(45.5, 0, 0, 1, 30, 92, '#4a463e');
-B(0, 30, 0, 92, 1, 92, null);                              // invisible ceiling
-B(0, 0, 0, 8, 12, 8, '#a08e6c'); B(0, 12, 0, 14, 1, 14, '#7d6f55');   // central tower + roof
-B(-22, 0, -22, 10, 8, 10, '#9a8a70'); B(22, 0, 22, 10, 8, 10, '#9a8a70');
-B(22, 0, -22, 6, 14, 6, '#8c7b60'); B(-22, 0, 22, 6, 14, 6, '#8c7b60');
-B(-38, 0, 0, 6, 10, 28, '#857a64'); B(38, 0, 0, 6, 10, 28, '#857a64'); // sniper ledges
-B(0, 17, -24, 12, 1, 4, '#6f8fa8'); B(0, 17, 24, 12, 1, 4, '#6f8fa8');  // floating platforms
-B(-24, 19, 0, 4, 1, 12, '#6f8fa8'); B(24, 19, 0, 4, 1, 12, '#6f8fa8');
-B(-12, 0, 0, 1, 3, 8, '#77705f'); B(12, 0, 0, 1, 3, 8, '#77705f');     // cover walls
-B(0, 0, -12, 8, 3, 1, '#77705f'); B(0, 0, 12, 8, 3, 1, '#77705f');
-for (const [x, z, s, h] of [[-30, -10, 3, 3], [30, 10, 3, 3], [-10, 30, 3, 3], [10, -30, 3, 3], [-32, 32, 4, 2], [32, -32, 4, 2], [-8, -34, 2, 2], [8, 34, 2, 2]])
-  B(x, 0, z, s, h, s, '#a5763d');                          // crates
-
-export const MAP = {
-  boxes,
-  spawns: [[-40, 0, -40], [40, 0, 40], [40, 0, -40], [-40, 0, 40], [0, 0, -40], [0, 0, 40],
-           [-28, 0, 0], [28, 0, 0], [-38, 10, 0], [38, 10, 0], [0, 13, 0], [-22, 8, -22], [22, 8, 22]],
-  pickups: [
-    ...[[0, 13, 4], [-22, 8, -22], [22, 8, 22], [-38, 10, 8], [38, 10, -8], [0, 0, -20], [0, 0, 20], [-20, 0, 0], [20, 0, 0]].map(pos => ({ type: 'weapon', pos })),
-    ...[[-32, 2, 32], [32, 2, -32], [0, 18, -24], [-40, 0, -20]].map(pos => ({ type: 'health', pos })),
-    ...[[0, 18, 24], [-24, 20, 0]].map(pos => ({ type: 'shield', pos })),
-    ...[[24, 20, 0], [40, 0, 20], [-10, 0, -20]].map(pos => ({ type: 'grenade', pos })),
-  ],
-};
+// ---------- Maps live in maps.js. MAP is the default map; every physics/raycast helper takes an optional `map`.
+import { MAPS, MAP_IDS } from './maps.js';
+export { MAPS, MAP_IDS };
+export const MAP = MAPS.outpost;
 
 // ---------- Math / collision helpers
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -77,9 +51,9 @@ export function rayBox(o, d, mn, mx) {
   }
   return tmin;
 }
-export function rayWorld(o, d, maxT) {
+export function rayWorld(o, d, maxT, map = MAP) {
   let best = maxT;
-  for (const b of boxes) { const t = rayBox(o, d, b.min, b.max); if (t < best) best = t; }
+  for (const b of map.boxes) { const t = rayBox(o, d, b.min, b.max); if (t < best) best = t; }
   return best;
 }
 export function hitboxes(pos) {
@@ -96,10 +70,10 @@ function overlaps(pos, b) {
          pos[1] + H > b.min[1] + e && pos[1] < b.max[1] - e &&
          pos[2] + R > b.min[2] + e && pos[2] - R < b.max[2] - e;
 }
-function moveAxis(s, axis, delta) {
+function moveAxis(s, axis, delta, map) {
   if (!delta) return;
   s.pos[axis] += delta;
-  for (const b of boxes) {
+  for (const b of map.boxes) {
     if (!overlaps(s.pos, b)) continue;
     if (axis === 1) {
       if (delta > 0) s.pos[1] = b.min[1] - CFG.H;
@@ -110,8 +84,14 @@ function moveAxis(s, axis, delta) {
 }
 
 // Deterministic movement step — identical on client (prediction) and server (authority).
-// s: {pos, vel, onGround, fuel, groundTime}   inp: {mx, mz, yaw, jump, jet, sprint}
-export function stepPlayer(s, inp, dt) {
+// s: {pos, vel, onGround, fuel, groundTime, hoverArmed, pj, air, thrusting}
+// inp: {mx, mz, yaw, jump, jet, sprint, down}
+//
+// Jetpack model (Mini Militia style): holding `jet` thrusts upward and burns fuel. There is no hover.
+// When you drop from height (falling faster than BRAKE_START) the jetpack automatically fires to
+// slow the fall to BRAKE_SPEED, burning a little fuel until you land. Hold `down` to dive fast instead.
+// `hoverArmed` is reused as the "braking" latch so the network snapshot format is unchanged.
+export function stepPlayer(s, inp, dt, map = MAP) {
   const sy = Math.sin(inp.yaw), cy = Math.cos(inp.yaw);
   const mx = clamp(inp.mx || 0, -1, 1), mz = clamp(inp.mz || 0, -1, 1);
   let dx = cy * mx - sy * mz, dz = -sy * mx - cy * mz;
@@ -121,13 +101,30 @@ export function stepPlayer(s, inp, dt) {
   s.vel[0] += (dx * sp - s.vel[0]) * a;
   s.vel[2] += (dz * sp - s.vel[2]) * a;
 
+  const down = !!inp.down;
+  s.pj = !!inp.jump;
   if (inp.jump && s.onGround) s.vel[1] = CFG.JUMP;
-  if (inp.jet && s.fuel > 0) {
+  let thrusting = false;
+  if (inp.jet && s.fuel > 0 && !down) {
     if (s.vel[1] < CFG.MAX_UP) s.vel[1] = Math.min(CFG.MAX_UP, s.vel[1] + CFG.JET * dt);
     s.fuel = Math.max(0, s.fuel - CFG.FUEL_DRAIN * dt);
-    s.groundTime = 0;
+    s.groundTime = 0; thrusting = true; s.hoverArmed = false;
   }
+  s.air = s.onGround ? 0 : (s.air || 0) + dt;
   s.vel[1] = Math.max(-CFG.MAX_FALL, s.vel[1] - CFG.G * dt);
+
+  // automatic fall brake
+  if (!thrusting && !down && s.fuel > 0 && !s.onGround) {
+    if (s.vel[1] < -CFG.BRAKE_START) s.hoverArmed = true;
+  } else if (!thrusting) s.hoverArmed = false;
+  let braking = false;
+  if (s.hoverArmed && !thrusting && !down && s.fuel > 0 && !s.onGround) {
+    braking = true;
+    if (s.vel[1] < -CFG.BRAKE_SPEED) s.vel[1] += (-CFG.BRAKE_SPEED - s.vel[1]) * Math.min(1, 10 * dt);
+    s.fuel = Math.max(0, s.fuel - CFG.BRAKE_DRAIN * dt);
+    s.groundTime = 0;
+  } else if (s.fuel <= 0) s.hoverArmed = false;
+  s.thrusting = thrusting || braking;
 
   if (s.onGround) {
     s.groundTime += dt;
@@ -137,6 +134,7 @@ export function stepPlayer(s, inp, dt) {
   const n = Math.max(1, Math.ceil(maxD / 0.3)), h = dt / n;
   s.onGround = false;
   for (let i = 0; i < n; i++) {
-    moveAxis(s, 0, s.vel[0] * h); moveAxis(s, 2, s.vel[2] * h); moveAxis(s, 1, s.vel[1] * h);
+    moveAxis(s, 0, s.vel[0] * h, map); moveAxis(s, 2, s.vel[2] * h, map); moveAxis(s, 1, s.vel[1] * h, map);
   }
+  if (s.onGround) { s.hoverArmed = false; s.thrusting = false; }
 }
