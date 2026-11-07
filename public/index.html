@@ -173,6 +173,13 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 .joy{position:fixed;transform:translate(-50%,-50%);border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.55);display:none;pointer-events:none;opacity:var(--topa)}
 .joy .knob{position:absolute;left:50%;top:50%;width:42%;height:42%;transform:translate(-50%,-50%);border-radius:50%;background:rgba(255,255,255,.65);box-shadow:0 0 8px rgba(0,0,0,.4)}
 .joy.fixed:not(.act){opacity:calc(var(--topa)*.6)}
+.joy .ring{display:none;position:absolute;inset:-8px;border-radius:50%;pointer-events:none;background:conic-gradient(var(--fc,#4cc8ff) calc(var(--f,1)*360deg),rgba(255,255,255,.18) 0);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 5px),#000 calc(100% - 4px));mask:radial-gradient(farthest-side,transparent calc(100% - 5px),#000 calc(100% - 4px))}
+.joy .ja{display:none;position:absolute;left:50%;transform:translateX(-50%);font-style:normal;font-size:13px;color:rgba(255,255,255,.75)}
+.joy .ja.up{top:4px}.joy .ja.dn{bottom:4px}
+body.mm .joy .ring,body.mm .joy .ja{display:block}
+.joy.jetting{border-color:#4cc8ff}.joy.jetting .knob{background:#4cc8ff}.joy.jetting .ja.up{color:#4cc8ff}
+.joy.diving{border-color:#ff7a6a}.joy.diving .knob{background:#ff5a4a}
+.dim{opacity:.38;pointer-events:none}
 .joy.aim{border-color:rgba(255,200,110,.8)}.joy.aim .knob{background:rgba(255,190,90,.85)}
 .joy.aim.firing{border-color:#ff7a6a}.joy.aim.firing .knob{background:#ff5a4a}
 #wheel{position:fixed;width:208px;height:208px;margin:-104px 0 0 -104px;border-radius:50%;background:rgba(10,14,9,.9);border:2px solid #ffd88a;display:none;z-index:30;pointer-events:none}
@@ -270,7 +277,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
       <b>Jump</b><span>Hold <u>JET</u> to climb. Jump off a high ledge and the jetpack <u>slows your fall</u> automatically</span>
       <b>Jet</b><span>Hold to climb · hold <b style="color:inherit">descend</b> to drop</span>
       <b>PC</b><span>WASD move · Space jet · C descend · Shift sprint · Mouse aim/fire · Right-click zoom · R reload · Q swap · G grenade · F melee · E take weapon · Tab scores</span>
-      <b>Phone</b><span>Left thumb: move stick · drag right side: aim · buttons: fire, jet, ▼ descend, grenade, melee…</span>
+      <b>Phone</b><span>Mini Militia style: left stick moves — push to the top edge to fly, bottom edge to dive · right stick aims and shoots past halfway · drag elsewhere on the right to look around · 💣 grenade, 🔪 melee, ⇄ swap (hold for wheel), E appears next to weapons</span>
     </div>
     <button class="mbtn ghost" data-go="main">← Back</button>
   </div>
@@ -286,11 +293,14 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
   <div class="screen" id="s-ctl">
     <h2>Touch controls</h2>
     <button class="mbtn primary" id="editlayout"><span class="ico">✥</span><span>Edit button layout<small>Move, resize, opacity, presets</small></span></button>
-    <div class="lbl2">RIGHT SIDE OF SCREEN</div>
-    <div class="segs" data-set="aim"><button class="seg" data-v="stick">Aim stick</button><button class="seg" data-v="swipe">Swipe to look</button></div>
-    <div class="field"><span>Fire at stick edge<span class="sub">Push the aim stick all the way to shoot</span></span><div class="tog" data-set="stickfire"></div></div>
-    <div class="lbl2">JOYSTICKS</div>
-    <div class="segs" data-set="joy"><button class="seg" data-v="float">Floating</button><button class="seg" data-v="fixed">Fixed</button></div>
+    <div class="lbl2">CONTROL STYLE</div>
+    <div class="segs" data-set="scheme"><button class="seg" data-v="mm">Mini Militia</button><button class="seg" data-v="custom">Custom</button></div>
+    <div class="note" id="mmnote">Left stick moves — push it to the <b>top edge to fly</b>, bottom edge to dive. Right stick aims — push it <b>past halfway to shoot</b>. The pick-up button appears only next to a weapon.</div>
+    <div class="lbl2 cust">RIGHT SIDE OF SCREEN</div>
+    <div class="segs cust" data-set="aim"><button class="seg" data-v="swipe">Swipe to look</button><button class="seg" data-v="stick">Aim stick</button></div>
+    <div class="field cust"><span>Fire at stick edge<span class="sub">Push the aim stick all the way to shoot</span></span><div class="tog" data-set="stickfire"></div></div>
+    <div class="lbl2 cust">JOYSTICKS</div>
+    <div class="segs cust" data-set="joy"><button class="seg" data-v="float">Floating</button><button class="seg" data-v="fixed">Fixed</button></div>
     <div class="lbl2">AIM ASSIST</div>
     <div class="segs" data-set="assist"><button class="seg" data-v="off">Off</button><button class="seg" data-v="low">Low</button><button class="seg" data-v="high">High</button></div>
     <div class="lbl2">LOOK SENSITIVITY</div><input type="range" data-set="sens" min="0.4" max="2.2" step="0.05">
@@ -339,7 +349,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 </div>
 
 <div id="touch">
-  <div id="mjoy" class="joy"><div class="knob"></div></div>
+  <div id="mjoy" class="joy"><div class="ring"></div><i class="ja up">▲</i><i class="ja dn">▼</i><div class="knob"></div></div>
   <div id="ajoy" class="joy aim"><div class="knob"></div></div>
   <div class="tbtn" data-id="fire">FIRE</div>
   <div class="tbtn" data-id="jet"><div class="ring"></div><div class="lev"></div><span>JET</span></div>
@@ -358,7 +368,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
   <div id="edarea"></div>
   <div class="edbar top">
     <span class="edt">PRESETS</span>
-    <button class="seg" data-preset="classic">Classic</button><button class="seg" data-preset="thumbs">Thumbs</button><button class="seg" data-preset="claw">Claw</button>
+    <button class="seg" data-preset="mm">Mini Militia</button><button class="seg" data-preset="classic">Classic</button><button class="seg" data-preset="thumbs">Thumbs</button><button class="seg" data-preset="claw">Claw</button>
     <button class="seg" id="edreset">Reset</button>
   </div>
   <div class="edbar bot">
