@@ -129,6 +129,19 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 #room{font-size:11px;font-weight:700;color:var(--ink);text-shadow:0 1px 3px #000}
 .cbtn{pointer-events:auto;cursor:pointer;border:1.5px solid #ffd88a;background:rgba(10,14,9,.85);color:#ffd88a;font-weight:800;font-size:10px;letter-spacing:1px;padding:3px 7px;border-radius:5px}
 .cbtn:active{background:var(--acc);color:var(--accd)}
+.lmap{font-size:13px;font-weight:700;color:var(--ink);text-align:center}
+.lplayers{display:flex;flex-direction:column;gap:6px}
+.lp{display:flex;align-items:center;gap:10px;background:var(--panel);border:2px solid var(--line);border-radius:7px;padding:8px 12px;font-weight:800}
+.lp .dot{width:12px;height:12px;border-radius:50%;flex:none}
+.lp .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.lp .tag{font-size:11px;letter-spacing:1px;padding:3px 8px;border-radius:10px;background:#3a3f36;color:var(--ink)}
+.lp .tag.ok{background:#3fa34d;color:#fff}
+.lp .host{font-size:11px;color:var(--acc);letter-spacing:1px}
+.note.err{border-color:#ff7a6a;color:#ffd2cc}
+.lstatus{text-align:center;font-weight:800;font-size:14px;color:var(--ink);min-height:20px}
+.lstatus.go{color:var(--acc);font-size:20px;letter-spacing:2px}
+#lready.on{background:#3fa34d;border-color:#8fe39b;color:#fff}
+#s-lobby{justify-content:flex-start}
 .codebox{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--panel);border:2px solid var(--line);border-radius:7px;padding:8px 12px;font-weight:800;letter-spacing:2px}
 .codebox b{font:400 clamp(18px,3.6vh,24px) var(--head);color:var(--acc);letter-spacing:3px}
 .codebox .cbtn{font-size:12px;padding:6px 10px}
@@ -270,11 +283,29 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
   <div class="screen" id="s-multi">
     <h2>Multiplayer</h2>
     <div class="mapsel"><button class="mapnav" data-dir="-1" aria-label="Previous map">‹</button><canvas width="168" height="100"></canvas><div class="mapinfo"><b class="mapname"></b><small class="mapdesc"></small></div><button class="mapnav" data-dir="1" aria-label="Next map">›</button></div>
-    <button class="mbtn primary" id="quick"><span class="ico">⚡</span><span>Quick play<small id="quicksub">Join the public arena</small></span></button>
-    <div class="row" style="gap:8px"><input id="roomin" type="text" maxlength="8" placeholder="ROOM CODE" autocomplete="off" autocapitalize="characters" style="flex:1"><button class="cbtn" id="mcopy" style="flex:none;font-size:12px;padding:0 12px" title="Copy room code">📋 COPY</button></div>
-    <div class="row"><button class="mbtn ghost" id="joinroom">Join room</button><button class="mbtn ghost" id="createroom">Create room</button></div>
-    <div class="note">The map you pick above is used when you create a room or open the public lobby. Share the room link or code with friends — everyone with the same code plays in the same match (up to 12 players).</div>
+    <button class="mbtn primary" id="createroom"><span class="ico">＋</span><span>Create room<small>Private lobby on the map above — share the code</small></span></button>
+    <button class="mbtn" data-go="join"><span class="ico">⇥</span><span>Join room<small>Enter or paste a friend's code</small></span></button>
+    <button class="mbtn ghost" id="quick"><span class="ico">⚡</span><span>Quick play<small id="quicksub">Join the public arena</small></span></button>
     <button class="mbtn ghost" data-go="main">← Back</button>
+  </div>
+
+  <div class="screen" id="s-join">
+    <h2>Join room</h2>
+    <div class="lbl2">ROOM CODE</div>
+    <div class="row" style="gap:8px"><input id="roomin" type="text" maxlength="8" placeholder="e.g. K7Q2M" autocomplete="off" autocapitalize="characters" spellcheck="false" style="flex:1;text-transform:uppercase;letter-spacing:4px;font-weight:800"><button class="cbtn" id="paste" style="flex:none;font-size:13px;padding:0 14px">📋 PASTE</button></div>
+    <button class="mbtn primary" id="joinroom"><span class="ico">▶</span><span>Join</span></button>
+    <div class="note" id="joinmsg">Ask the room creator for the 5-letter code.</div>
+    <button class="mbtn ghost" data-go="multi">← Back</button>
+  </div>
+
+  <div class="screen" id="s-lobby">
+    <h2>Room lobby</h2>
+    <div class="codebox"><span>CODE <b id="lcode">—</b></span><button class="cbtn" id="lcopy">📋 COPY</button></div>
+    <div class="lmap" id="lmap"></div>
+    <div class="lplayers" id="lplayers"></div>
+    <div class="lstatus" id="lstatus">Waiting for players…</div>
+    <button class="mbtn primary" id="lready"><span class="ico">✔</span><span id="lreadyt">READY</span></button>
+    <button class="mbtn ghost" id="lleave">← Leave room</button>
   </div>
 
   <div class="screen" id="s-how">
@@ -343,7 +374,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 <div id="pause">
   <div class="card">
     <h2>Paused</h2>
-    <div class="codebox" id="pcode"><span>ROOM <b id="pcodev"></b></span><button class="cbtn" id="pcopy">📋 COPY</button></div>
+    <div class="codebox" id="pcode" style="display:none"><span>ROOM <b id="pcodev"></b></span><button class="cbtn" id="pcopy">📋 COPY</button></div>
     <button class="mbtn primary" id="resume"><span class="ico">▶</span><span>Resume</span></button>
     <button class="mbtn" id="pfs"><span class="ico">⛶</span><span>Fullscreen</span></button>
     <button class="mbtn" id="pedit"><span class="ico">✥</span><span>Edit controls</span></button>

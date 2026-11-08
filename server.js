@@ -76,7 +76,8 @@ class Room {
     this.nextProj = 1; this.nextPick = 1000; this.solo = !!opts.solo;
     this.mapId = MAPS[opts.map] ? opts.map : 'outpost'; this.map = MAPS[this.mapId];
     this.resetPickups();
-    this.state = 'playing'; this.matchEnd = now() + CFG.MATCH_MS; this.endAt = 0;
+    this.lobby = !!opts.lobby; this.host = null; this.startAt = 0; this.lobbySentAt = 0;
+    this.state = this.lobby ? 'lobby' : 'playing'; this.matchEnd = now() + CFG.MATCH_MS; this.endAt = 0;
     for (let i = 0; i < (opts.bots || 0); i++) this.addBot(opts.diff);
   }
   resetPickups() {
@@ -96,9 +97,13 @@ class Room {
       ai: bot ? newBotState(diff) : null,
     };
     this.players.set(p.id, p);
-    this.spawn(p);
+    const waiting = this.inLobby();
+    p.ready = false;
+    if (waiting) p.respawnAt = Infinity; else this.spawn(p);
+    if (!bot && this.lobby && !this.players.has(this.host)) this.host = p.id;
     if (!bot) {
-      send(ws, { type: 'welcome', id: p.id, room: this.code, solo: this.solo, map: this.mapId });
+      send(ws, { type: 'welcome', id: p.id, room: this.code, solo: this.solo, map: this.mapId, lobby: waiting, priv: this.lobby });
+      if (waiting) this.sendLobby(true);
       this.events.push({ e: 'msg', text: `${name} joined` });
     }
     this.roster();
@@ -112,7 +117,32 @@ class Room {
   remove(p) {
     this.players.delete(p.id);
     this.events.push({ e: 'msg', text: `${p.name} left` });
+    if (this.host === p.id) this.host = [...this.players.values()].find((q) => !q.bot)?.id ?? null;
     this.roster();
+    if (this.inLobby()) this.sendLobby(true);
+  }
+  // ---------- private-room lobby: everyone readies up, then a 3 s countdown starts the match
+  inLobby() { return this.state === 'lobby' || this.state === 'countdown'; }
+  sendLobby(force) {
+    const t = now();
+    if (!force && t - this.lobbySentAt < 250) return;
+    this.lobbySentAt = t;
+    const players = [...this.players.values()].filter((p) => !p.bot).map((p) => ({ id: p.id, name: p.name, color: p.color, ready: !!p.ready, host: p.id === this.host }));
+    const msg = { type: 'lobby', code: this.code, map: this.mapId, st: this.state, cd: this.state === 'countdown' ? Math.max(0, this.startAt - t) : 0, players };
+    for (const p of this.players.values()) if (p.ws) send(p.ws, msg);
+  }
+  lobbyTick(t) {
+    const hs = [...this.players.values()].filter((p) => !p.bot);
+    const allReady = hs.length >= 2 && hs.every((p) => p.ready);
+    if (this.state === 'lobby' && allReady) { this.state = 'countdown'; this.startAt = t + 3000; this.sendLobby(true); }
+    else if (this.state === 'countdown' && !allReady) { this.state = 'lobby'; this.sendLobby(true); }
+    else if (this.state === 'countdown' && t >= this.startAt) { this.resetMatch(); return; }
+    this.sendLobby(false);
+  }
+  backToLobby() {
+    this.state = 'lobby'; this.projectiles = []; this.clouds = []; this.resetPickups();
+    for (const p of this.players.values()) { p.ready = false; p.alive = false; p.respawnAt = Infinity; p.kills = 0; p.deaths = 0; }
+    this.sendLobby(true);
   }
   roster() {
     const list = [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, kills: p.kills, deaths: p.deaths, bot: p.bot }));
@@ -142,6 +172,7 @@ class Room {
     if (m.type === 'i') this.onInput(p, m);
     else if (m.type === 'a') this.onAction(p, m.a);
     else if (m.type === 'ping') send(p.ws, { type: 'pong', c: m.c, s: now() });
+    else if (m.type === 'ready' && this.inLobby()) { p.ready = !!m.v; this.sendLobby(true); }
     else if (m.type === 'chat') {
       const t = String(m.text || '').slice(0, 120).trim();
       if (t) this.events.push({ e: 'chat', n: p.name, c: p.color, text: t });
@@ -408,7 +439,8 @@ class Room {
 
   tick(dt) {
     const t = now();
-    if (this.state === 'ended') { if (t >= this.endAt) this.resetMatch(); return; }
+    if (this.inLobby()) { this.lobbyTick(t); return; }
+    if (this.state === 'ended') { if (t >= this.endAt) { if (this.lobby) this.backToLobby(); else this.resetMatch(); } return; }
     if (t >= this.matchEnd) { this.endMatch([...this.players.values()].sort((a, b) => b.kills - a.kills)[0]); return; }
     for (const p of this.players.values()) {
       if (!p.alive) { if (t >= p.respawnAt) this.spawn(p); continue; }
@@ -433,6 +465,7 @@ class Room {
   }
 
   snapshot() {
+    if (this.inLobby()) return;          // lobby sends its own 'lobby' messages
     const t = now();
     const ps = [...this.players.values()].map((p) => [p.id, r2(p.pos[0]), r2(p.pos[1]), r2(p.pos[2]), r2(p.aimYaw), r2(p.aimPitch),
       p.alive ? 1 : 0, p.weapons[p.slot]?.id || '', t < p.protectUntil ? 1 : 0, Math.ceil(p.hp), p.jet && p.alive ? 1 : 0, Math.ceil(p.armor)]);
@@ -466,13 +499,20 @@ wss.on('connection', (ws) => {
         const bots = clamp(Math.floor(+m.bots || 0), 1, CFG.MAX_PLAYERS - 1);
         room = new Room(code, { solo: true, bots, diff: DIFFS[m.diff] ? m.diff : 'normal', map: m.map });
         rooms.set(code, room);
+      } else if (m.create) {   // private room with a lobby; the server picks the code
+        if (rooms.size >= MAX_ROOMS) return send(ws, { type: 'full' });
+        const A = 'ABCDEFGHJKLMNPQRTUVWXYZ2346789';
+        let code; do { code = ''; for (let i = 0; i < 5; i++) code += A[Math.floor(Math.random() * A.length)]; } while (rooms.has(code));
+        room = new Room(code, { lobby: true, map: m.map }); rooms.set(code, room);
       } else {
-        const code = String(m.room || 'PUBLIC').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'PUBLIC';
+        const code = String(m.room || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+        const pubMap = MAP_IDS.find((i) => MAPS[i].code === code);
         room = rooms.get(code);
-        if (!room) {
+        if (!room && pubMap) {                // public quick-play arena for that map (no lobby)
           if (rooms.size >= MAX_ROOMS) return send(ws, { type: 'full' });
-          room = new Room(code, { map: MAPS[m.map] ? m.map : (MAP_IDS.find((i) => MAPS[i].code === code) || 'outpost') }); rooms.set(code, room);
+          room = new Room(code, { map: pubMap }); rooms.set(code, room);
         }
+        if (!room) return send(ws, { type: 'nojoin', code });
       }
       if (room.players.size >= CFG.MAX_PLAYERS) return send(ws, { type: 'full' });
       player = room.add(ws, name);

@@ -95,6 +95,7 @@ function make(def) {
   const P = (type, list) => list.map((pos) => ({ type, pos }));
   return {
     id: def.id, name: def.name, desc: def.desc, code: def.code, w: HW * 2, d: HD * 2, h, inner: [w, d],
+    limit: { hx: ix + 2.5, hz: iz + 2.5, r: cr + 2.5 },        // invisible rounded wall along the rock ring (all heights)
     theme: def.theme, nature: N, ground: def.floor, lamps: def.lamps || [], boxes, deco, far,
     spawns: def.spawns,
     pickups: [...P('weapon', def.weapons), ...P('health', def.health), ...P('shield', def.shield),

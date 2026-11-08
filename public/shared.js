@@ -91,6 +91,20 @@ function moveAxis(s, axis, delta, map) {
 // When you drop from height (falling faster than BRAKE_START) the jetpack automatically fires to
 // slow the fall to BRAKE_SPEED, burning a little fuel until you land. Hold `down` to dive fast instead.
 // `hoverArmed` is reused as the "braking" latch so the network snapshot format is unchanged.
+// Map boundary: a rounded rectangle along the rock ring. Players (and flying jetpacks) can't cross it at any height.
+function keepInside(s, L) {
+  const R = L.r - CFG.R, ax = Math.abs(s.pos[0]), az = Math.abs(s.pos[2]);
+  const qx = ax - (L.hx - L.r), qz = az - (L.hz - L.r);
+  let nx = 0, nz = 0, over = 0;
+  if (qx > 0 && qz > 0) { const d = Math.hypot(qx, qz); if (d > R) { over = d - R; nx = qx / d; nz = qz / d; } }
+  else if (qx > R) { over = qx - R; nx = 1; }
+  else if (qz > R) { over = qz - R; nz = 1; }
+  if (!over) return;
+  const sx = Math.sign(s.pos[0]) || 1, sz = Math.sign(s.pos[2]) || 1;
+  s.pos[0] -= sx * nx * over; s.pos[2] -= sz * nz * over;
+  const vOut = s.vel[0] * sx * nx + s.vel[2] * sz * nz;          // cancel only the outward part of the velocity
+  if (vOut > 0) { s.vel[0] -= sx * nx * vOut; s.vel[2] -= sz * nz * vOut; }
+}
 export function stepPlayer(s, inp, dt, map = MAP) {
   const sy = Math.sin(inp.yaw), cy = Math.cos(inp.yaw);
   const mx = clamp(inp.mx || 0, -1, 1), mz = clamp(inp.mz || 0, -1, 1);
@@ -138,6 +152,7 @@ export function stepPlayer(s, inp, dt, map = MAP) {
   s.onGround = false;
   for (let i = 0; i < n; i++) {
     moveAxis(s, 0, s.vel[0] * h, map); moveAxis(s, 2, s.vel[2] * h, map); moveAxis(s, 1, s.vel[1] * h, map);
+  if (map.limit) keepInside(s, map.limit);
   }
   if (s.onGround) { s.hoverArmed = false; s.thrusting = false; }
 }

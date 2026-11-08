@@ -45,6 +45,41 @@ let seq = 0; const pending = [];
 let zoom = false, mouseDown = false, chatOpen = false, boardOpen = false, paused = false, lastWheel = 0;
 let shake = 0, hitT = 0, dmgT = 0, dmgDirT = 0, dmgAngle = 0, localNextFire = 0;
 const keys = {}; const touch = { mx: 0, mz: 0, fire: false, sfire: false, jet: 0, down: false, sp: false, nade: false, aiming: false };
+let inLobby = false, lobbyState = null, privRoom = false;
+// ---------- match view / lobby view
+function enterMatchView() {
+  inLobby = false; inMenu = false;
+  $('menu').style.display = 'none'; $('hud').style.display = 'block';
+  if (isTouch) { $('touch').style.display = 'block'; resetTouch(); }
+  if (showcase) showcase.visible = false;
+  for (const r of remotes.values()) r.mesh.visible = true;
+  $('room').textContent = (soloMatch ? 'Solo vs bots' : privRoom ? 'Private room' : 'Public arena') + ' · ' + MAPC.name;   // code stays hidden in-match
+  $('copyroom').style.display = 'none';
+  if (!isTouch) { lockPointer(); setTimeout(() => { if (connected && !inLobby && document.pointerLockElement !== cv && !chatOpen) setPause(true); }, 600); }
+}
+function showLobby() {
+  inLobby = true; inMenu = true; me = null; paused = false;
+  for (const id of ['hud', 'touch', 'pause', 'end', 'board']) $(id).style.display = 'none';
+  for (const r of remotes.values()) r.mesh.visible = false;
+  if (myMesh) myMesh.visible = false;
+  document.exitPointerLock?.(); resetTouch();
+  $('menu').style.display = 'block'; showScreen('lobby');
+  renderLobby();
+}
+function renderLobby() {
+  const L = lobbyState;
+  $('lcode').textContent = roomCode || '—';
+  $('lmap').textContent = `Map: ${MAPC.name} · up to 12 players`;
+  if (!L) return;
+  const meL = L.players.find((p) => p.id === myId);
+  setHTML($('lplayers'), L.players.map((p) => `<div class="lp"><span class="dot" style="background:${p.color}"></span><span class="nm">${esc(p.name)}${p.id === myId ? ' (you)' : ''}</span>${p.host ? '<span class="host">HOST</span>' : ''}<span class="tag ${p.ready ? 'ok' : ''}">${p.ready ? 'READY ✓' : 'NOT READY'}</span></div>`).join(''));
+  const n = L.players.length, nr = L.players.filter((p) => p.ready).length;
+  const st = $('lstatus');
+  if (L.st === 'countdown') { st.textContent = `Starting in ${Math.ceil(L.cd / 1000)}…`; st.classList.add('go'); }
+  else { st.classList.remove('go'); st.textContent = n < 2 ? 'Share the code — waiting for another player to join' : nr < n ? `${nr} of ${n} ready — the match starts when everyone is ready` : 'Everyone is ready!'; }
+  $('lready').classList.toggle('on', !!meL?.ready);
+  $('lreadyt').textContent = meL?.ready ? 'READY ✓ (tap to cancel)' : 'READY';
+}
 let wasDead = false, aimEnemy = null, aimEnemySince = 0, nextAuto = 0, autoPickBlock = 0, autoReloadBlock = 0, lastShotT = 0, prevFuel = 1;
 const roster = new Map(), remotes = new Map(), pickMeshes = new Map(), projMeshes = new Map(), fx = [];
 let myMesh = null, showcase = null, inMenu = true, booted = false;
@@ -511,7 +546,7 @@ const hideConn = () => { $('conn').style.display = 'none'; };
 function showStatus(msg) { hideConn(); $('statusmsg').textContent = msg; $('status').style.display = 'flex'; document.exitPointerLock?.(); }
 
 function connect(name, opts) {
-  wantLeave = false; showConn(opts.solo ? 'Starting solo match…' : 'Connecting…');
+  wantLeave = false; showConn(opts.solo ? 'Starting solo match…' : opts.create ? 'Creating room…' : 'Connecting…');
   openSocket(name, opts, 0);
 }
 function openSocket(name, opts, attempt) {
@@ -522,7 +557,7 @@ function openSocket(name, opts, attempt) {
   const timer = setTimeout(() => { if (!opened) { try { sock.close(); } catch {} } }, 15000);
   sock.onopen = () => {
     opened = true; clearTimeout(timer);
-    send({ type: 'join', name, room: opts.room || '', solo: !!opts.solo, bots: opts.bots, diff: opts.diff, map: opts.map });
+    send({ type: 'join', name, room: opts.room || '', solo: !!opts.solo, create: !!opts.create, bots: opts.bots, diff: opts.diff, map: opts.map });
     send({ type: 'ping', c: Date.now() });
     clearInterval(pingTimer); pingTimer = setInterval(() => send({ type: 'ping', c: Date.now() }), 2000);
   };
@@ -542,18 +577,19 @@ function openSocket(name, opts, attempt) {
 function onMessage(m) {
   switch (m.type) {
     case 'welcome': {
-      myId = m.id; roomCode = m.room; soloMatch = !!m.solo; connected = true; inMenu = false;
+      myId = m.id; roomCode = m.room; soloMatch = !!m.solo; privRoom = !!m.priv; connected = true;
       MAPC = MAPS[m.map] || MAP; loadMapVisuals(MAPC);
-      hideConn(); $('menu').style.display = 'none'; $('hud').style.display = 'block';
-      if (isTouch) { $('touch').style.display = 'block'; resetTouch(); }
-      if (showcase) showcase.visible = false;
-      $('room').textContent = (soloMatch ? 'Solo vs bots' : `Room ${m.room}`) + ' · ' + MAPC.name;
-      if (!soloMatch) history.replaceState(null, '', `?room=${m.room}`);
-      $('copyroom').style.display = soloMatch ? 'none' : 'inline-block';
-      if (!isTouch) { lockPointer(); setTimeout(() => { if (connected && document.pointerLockElement !== cv && !chatOpen) setPause(true); }, 600); }
+      hideConn();
+      if (m.lobby) showLobby(); else enterMatchView();
       goWake();
       break;
     }
+    case 'lobby': lobbyState = m; if (!inLobby) showLobby(); renderLobby(); break;
+    case 'nojoin':
+      wantLeave = true; try { ws.close(); } catch {} hideConn(); connected = false;
+      $('menu').style.display = 'block'; showScreen('join');
+      $('joinmsg').innerHTML = `No room with code <b>${esc(m.code || '')}</b>. Check the code and try again.`; $('joinmsg').classList.add('err');
+      break;
     case 'full': wantLeave = true; try { ws.close(); } catch {} showStatus('That room is full (12 players max).'); break;
     case 'pong': {
       const t = Date.now(); rtt = t - m.c;
@@ -580,6 +616,7 @@ function refreshNames() {
 }
 
 function onSnapshot(s) {
+  if (inLobby && s.st !== 'lobby') enterMatchView();
   if (!synced) timeOffset = s.t - Date.now();
   const wasAlive = me?.alive;
   state = s.st; timeLeft = s.time; timeLeftAt = performance.now();
@@ -803,7 +840,7 @@ async function copyRoom(code, btn) {
 function setPause(on) {
   if (on && (!connected || inMenu)) return;
   paused = on; $('pause').style.display = on ? 'flex' : 'none';
-  if (on) { $('pcode').style.display = soloMatch ? 'none' : 'flex'; $('pcodev').textContent = roomCode || ''; }
+  $('pcode').style.display = 'none';
   if (on) { mouseDown = false; for (const k in keys) keys[k] = false; resetTouch(); if (document.pointerLockElement) document.exitPointerLock?.(); }
   else if (!isTouch && connected) lockPointer();
 }
@@ -1080,6 +1117,7 @@ function updateNadeArc() {
 
 // ---------- leaving a match / returning to the menu
 function leaveMatch() {
+  inLobby = false; lobbyState = null;
   wantLeave = true; clearInterval(pingTimer);
   if (ws) { ws.onclose = null; try { ws.close(); } catch {} ws = null; }
   for (const r of remotes.values()) scene.remove(r.mesh);
@@ -1162,12 +1200,23 @@ function initMenu() {
   syncDiff();
   $('startsolo').onclick = () => beginGame({ solo: true, bots: settings.bots, diff: settings.diff, map: settings.map });
   $('quick').onclick = () => beginGame({ room: MAPS[settings.map].code, map: settings.map });
-  $('joinroom').onclick = () => { const r = $('roomin').value.trim(); if (r) beginGame({ room: r }); else $('roomin').focus(); };
-  $('createroom').onclick = () => {
-    const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c = '';
-    for (let i = 0; i < 5; i++) c += A[Math.floor(Math.random() * A.length)];
-    $('roomin').value = c; beginGame({ room: c, map: settings.map });
+  $('createroom').onclick = () => beginGame({ create: true, map: settings.map });
+  const cleanCode = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+  $('roomin').oninput = () => { $('roomin').value = cleanCode($('roomin').value); $('joinmsg').classList.remove('err'); };
+  $('joinroom').onclick = () => {
+    const r = cleanCode($('roomin').value);
+    if (r.length < 4) { $('joinmsg').textContent = 'Enter the room code first.'; $('joinmsg').classList.add('err'); $('roomin').focus(); return; }
+    beginGame({ room: r });
   };
+  $('paste').onclick = async () => {
+    initAudio(); sfx('ui');
+    try { const t = cleanCode(await navigator.clipboard.readText()); if (t) { $('roomin').value = t; $('joinmsg').classList.remove('err'); $('joinmsg').textContent = 'Code pasted — tap Join.'; return; } } catch {}
+    $('roomin').focus(); $('joinmsg').textContent = 'Long-press the box and choose Paste.';
+  };
+  $('lcopy').onclick = (e) => copyRoom(roomCode, e.currentTarget);
+  $('lready').onclick = () => { initAudio(); sfx('ui'); const meL = lobbyState?.players.find((p) => p.id === myId); send({ type: 'ready', v: !meL?.ready }); };
+  $('lleave').onclick = () => { leaveMatch(); showScreen('multi'); };
+  if (new URLSearchParams(location.search).get('room')) setTimeout(() => showScreen('join'), 0);
   $('sens').value = settings.sens; $('sens').oninput = (e) => { settings.sens = +e.target.value; store.set('sens', settings.sens); };
   $('vol').value = settings.vol; $('vol').oninput = (e) => { settings.vol = +e.target.value; store.set('vol', settings.vol); sfx('ui'); };
   const tog = $('shadows'); tog.classList.toggle('on', settings.shadows);
@@ -1176,7 +1225,6 @@ function initMenu() {
   $('pausebtn').onclick = () => setPause(true);
   $('copyroom').onclick = (e) => { e.stopPropagation(); copyRoom(roomCode, e.currentTarget); };
   $('pcopy').onclick = (e) => copyRoom(roomCode, e.currentTarget);
-  $('mcopy').onclick = (e) => copyRoom($('roomin').value.trim().toUpperCase(), e.currentTarget);
   $('resume').onclick = () => setPause(false);
   $('slots').addEventListener('touchstart', (e) => {            // PUBG-style: tap a weapon slot to switch
     const el = e.target.closest('.slot'); if (!el || !me) return;
