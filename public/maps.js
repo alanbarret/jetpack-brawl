@@ -164,7 +164,7 @@ const mine = make({
   floor: '#4d3d2e', wall: '#3a2e24', ceil: '#2c231b',
   nature: { band: 12, spacing: 5, rock: '#5a4634', rockS: [6, 10], rockH: [22, 22], tree: null, treeP: 0, treeH: [0, 0], scatter: 4, far: 0, indoor: true },
   theme: { sky: ['#0b0907', '#15100b', '#1f160e'], fog: ['#16100a', 22, 85], hemi: ['#ffd9a8', '#4a2e18', 1.3], sun: ['#ffb870', 0.35, [10, 30, 5]], props: 'none', propColor: '#000' },
-  lamps: [[-38, 9, -10], [38, 9, 10], [0, 16, 0], [-14, 9, 12], [14, 9, -12], [-38, 9, 12], [38, 9, -12]],
+  lamps: [[-38, 9, -10], [38, 9, 10], [0, 20.5, 0], [-14, 9, 12], [14, 9, -12], [-38, 9, 12], [38, 9, -12]],
   build(B, M) {
     for (const x of [-40, -24, -8, 8, 24, 40]) { B(x, 0, -10, 2.4, 22, 2.4, '#6b4f33'); B(x, 0, 10, 2.4, 22, 2.4, '#6b4f33'); }   // timber supports
     B(-30, 6, -16, 36, 1, 10, '#8a6a44'); B(30, 6, 16, 36, 1, 10, '#8a6a44');     // side shelves

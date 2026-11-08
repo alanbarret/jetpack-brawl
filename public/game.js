@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { CFG, WEAPONS, MAP, MAPS, MAP_IDS, stepPlayer, aimDir, rayWorld, rayBox, hitboxes, inBox, NADES, NADE_TYPES, nadeLaunch, stepNade } from './shared.js';
 import { initControls, applyLayout, updateControls, resetTouch, bindSettingsUI, openEditor, buzz } from './controls.js';
-import { makeSoldier, setWeapon, animateSoldier, kickRecoil, flashMuzzle, swingMelee, muzzleWorld, setBlink, makeWeaponModel } from './models.js';
+import { makeSoldier, setWeapon, animateSoldier, kickRecoil, flashMuzzle, swingMelee, muzzleWorld, setBlink, makeWeaponModel, hitFlinch } from './models.js';
 
 // ---------- helpers
 const $ = (id) => document.getElementById(id);
@@ -45,7 +45,7 @@ let seq = 0; const pending = [];
 let zoom = false, mouseDown = false, chatOpen = false, boardOpen = false, paused = false, lastWheel = 0;
 let shake = 0, hitT = 0, dmgT = 0, dmgDirT = 0, dmgAngle = 0, localNextFire = 0;
 const keys = {}; const touch = { mx: 0, mz: 0, fire: false, sfire: false, jet: 0, down: false, sp: false, nade: false, aiming: false };
-let inLobby = false, lobbyState = null, privRoom = false;
+let inLobby = false, lobbyState = null, privRoom = false, lastWid = null, myDeathT = -1e9;
 // ---------- match view / lobby view
 function enterMatchView() {
   inLobby = false; inMenu = false;
@@ -69,9 +69,12 @@ function showLobby() {
 function renderLobby() {
   const L = lobbyState;
   $('lcode').textContent = roomCode || '—';
-  $('lmap').textContent = `Map: ${MAPC.name} · up to 12 players`;
-  if (!L) return;
-  const meL = L.players.find((p) => p.id === myId);
+  if (!L) { $('lmapname').textContent = MAPC.name; return; }
+  if (MAPS[L.map] && MAPC.id !== L.map) { MAPC = MAPS[L.map]; loadMapVisuals(MAPC); }
+  const meL = L.players.find((p) => p.id === myId), isHost = !!meL?.host;
+  $('lmapname').textContent = MAPC.name; $('lmapdesc').textContent = isHost ? MAPC.desc : `${MAPC.desc} · the host picks the arena`;
+  for (const b of document.querySelectorAll('#lmapsel .mapnav')) b.style.visibility = isHost && L.st === 'lobby' ? 'visible' : 'hidden';
+  drawMapPreview($('lmapsel').querySelector('canvas'), MAPC);
   setHTML($('lplayers'), L.players.map((p) => `<div class="lp"><span class="dot" style="background:${p.color}"></span><span class="nm">${esc(p.name)}${p.id === myId ? ' (you)' : ''}</span>${p.host ? '<span class="host">HOST</span>' : ''}<span class="tag ${p.ready ? 'ok' : ''}">${p.ready ? 'READY ✓' : 'NOT READY'}</span></div>`).join(''));
   const n = L.players.length, nr = L.players.filter((p) => p.ready).length;
   const st = $('lstatus');
@@ -636,12 +639,16 @@ function onSnapshot(s) {
 
   // --- remote players (buffered for interpolation)
   const seen = new Set();
-  for (const [id, x, y, z, ay, ap, alive, wid, prot, hp, jet, ar] of s.ps) {
+  const tnow = performance.now();
+  for (const [id, x, y, z, ay, ap, alive, wid, prot, hp, jet, ar, rl] of s.ps) {
     seen.add(id);
     if (id === myId) continue;
     const r = remotes.get(id) || makeRemote(id);
-    if (alive && !r.alive) { r.buf = []; r.lp = null; }
-    Object.assign(r, { alive: !!alive, wid, prot: !!prot, hp, ar: ar || 0, jet: !!jet });
+    if (alive && !r.alive) { r.buf = []; r.lp = null; r.deathT = -1e9; }
+    if (!alive && r.alive) r.deathT = tnow;                       // play the fall-over animation
+    if (alive && r.alive && hp < r.hp) hitFlinch(r.mesh);
+    if (rl && !r.rl) r.rlStart = tnow;
+    Object.assign(r, { alive: !!alive, wid, prot: !!prot, hp, ar: ar || 0, jet: !!jet, rl: !!rl });
     r.buf.push({ t: s.t, pos: [x, y, z], yaw: ay, pitch: ap });
     if (r.buf.length > 30) r.buf.shift();
   }
@@ -691,9 +698,15 @@ function handleEvent(e) {
     case 'kill':
       addFeed(e.k
         ? `<b style="color:${e.kc}">${esc(e.k)}</b> <i>[${wName(e.w)}${e.head ? ' ✛' : ''}]</i> <b style="color:${e.vc}">${esc(e.v)}</b>`
-        : `<b style="color:${e.vc}">${esc(e.v)}</b> <i>self-destructed</i>`);
+        : `<b style="color:${e.vc}">${esc(e.v)}</b> <i>[${wName(e.w)}] committed suicide 💥</i>`);
       break;
     case 'gas': gasCloud(e.p, e.r, e.d); sfxAt('gas', e.p); break;
+    case 'streak': {
+      const word = { 3: 'is on a KILLING SPREE', 5: 'is UNSTOPPABLE', 8: 'is GODLIKE', 12: 'is LEGENDARY' }[e.s] || `has ${e.s} kills in a row`;
+      addFeed(`🔥 <b style="color:${e.c}">${esc(e.n)}</b> <i>${word} (${e.s})</i>`);
+      if (e.n === settings.name) { toast(`🔥 ${e.s} KILL STREAK!`); sfx('ui'); }
+      break;
+    }
     case 'msg': addFeed(`<i>${esc(e.text)}</i>`); break;
     case 'chat': addChat(e); break;
     case 'end': showEnd(e); break;
@@ -703,7 +716,7 @@ function handleEvent(e) {
 function handlePriv(e) {
   if (e.e === 'hit') { $('hitm').className = e.kill ? 'kill' : e.head ? 'head' : ''; hitT = 0.15; sfx('hit'); buzz(e.kill ? 'kill' : e.head ? 'head' : 'hit'); }
   else if (e.e === 'dmg') {
-    dmgT = 0.5; sfx('hurt'); buzz('dmg');
+    dmgT = 0.5; sfx('hurt'); buzz('dmg'); if (myMesh) hitFlinch(myMesh);
     if (e.from) { const dx = e.from[0] - local.pos[0], dz = e.from[1] - local.pos[2]; if (dx || dz) { dmgAngle = Math.atan2(-dx, -dz); dmgDirT = 1.2; } }
   } else if (e.e === 'spawn') { yaw = e.yaw; pitch = 0; }
   else if (e.e === 'pick') {
@@ -924,14 +937,14 @@ let toastTimer;
 function toast(t) { const el = $('toast'); el.textContent = t; el.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(() => (el.style.opacity = 0), 1200); }
 function renderBoard() {
   const list = [...roster.values()].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
-  $('boardt').innerHTML = '<tr><th>Player</th><th>K</th><th>D</th></tr>' +
-    list.map((p) => `<tr class="${p.id === myId ? 'me' : ''}"><td style="color:${p.color}">${esc(p.name)}</td><td>${p.kills}</td><td>${p.deaths}</td></tr>`).join('');
-  $('boardr').textContent = soloMatch ? `Solo match · ping ${rtt}ms` : `Room ${roomCode} · invite: ${location.origin}/?room=${roomCode} · ping ${rtt}ms`;
+  $('boardt').innerHTML = '<tr><th>Player</th><th title="Kills">K</th><th title="Deaths">D</th><th title="Suicides">S</th></tr>' +
+    list.map((p) => `<tr class="${p.id === myId ? 'me' : ''}"><td style="color:${p.color}">${esc(p.name)}</td><td>${p.kills}</td><td>${p.deaths}</td><td>${p.suicides || 0}</td></tr>`).join('');
+  $('boardr').textContent = `${soloMatch ? 'Solo match' : privRoom ? 'Private room' : 'Public arena'} · K kills · D deaths · S suicides · ping ${rtt}ms`;
 }
 function showEnd(e) {
   $('end').style.display = 'flex';
   $('endw').textContent = e.winner ? `🏆 ${e.winner} wins!` : 'Match over';
-  $('endl').innerHTML = e.standings.map((p, i) => `<tr><td>${i + 1}</td><td style="color:${p.color}">${esc(p.name)}</td><td>${p.kills} K</td><td>${p.deaths} D</td></tr>`).join('');
+  $('endl').innerHTML = e.standings.map((p, i) => `<tr><td>${i + 1}</td><td style="color:${p.color}">${esc(p.name)}</td><td>${p.kills} K</td><td>${p.deaths} D</td><td>${p.suicides || 0} S</td></tr>`).join('');
 }
 
 // ---------- HUD & minimap
@@ -968,6 +981,12 @@ function updateHUD(dt) {
   const w = me.w[me.slot];
   if (w) setHTML($('ammo'), `<span>${WEAPONS[w.id].name}</span>${w.mag}<small>/${w.reserve}</small>` + (tn < reloadEnd ? '<div class="rl">RELOADING</div>' : ''));
   setHTML($('slots'), me.w.map((x, i) => `<div class="slot ${i === me.slot ? 'on' : ''}" data-i="${i}">${i + 1} ${x ? WEAPONS[x.id].name : '—'}</div>`).join(''));
+  {
+    const list = [...roster.values()].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
+    const rank = list.findIndex((p) => p.id === myId) + 1, kd = me.d ? (me.k / me.d).toFixed(1) : (me.k || 0).toFixed(1);
+    setHTML($('stats'), `<span title="Kills">⚔ <b>${me.k ?? 0}</b><small>/${CFG.KILL_LIMIT}</small></span><span title="Deaths">☠ <b>${me.d ?? 0}</b></span><span title="Suicides">💥 <b>${me.su ?? 0}</b></span><span title="K/D">K/D <b>${kd}</b></span>` +
+      (rank ? `<span title="Rank">#<b>${rank}</b><small>/${list.length}</small></span>` : '') + (me.sk >= 2 ? `<span class="hot" title="Kill streak">🔥 <b>${me.sk}</b></span>` : ''));
+  }
   const gn = me.gn || {}, gs = me.gs || 'frag';
   setHTML($('nades'), NADE_TYPES.map((k) => `<span class="ng ${k === gs ? 'on' : ''}">${NADES[k].short} ${gn[k] || 0}</span>`).join(''));
   const nt = document.querySelector('#touch [data-id=ntype]');
@@ -1033,13 +1052,19 @@ function render(dt, alpha, tn) {
   if (showcase) showcase.visible = false;
   const decay = Math.exp(-dt * 12); renderOffset = renderOffset.map((v) => v * decay);
   const lp = add(lerp3(prevPos, local.pos, alpha), renderOffset);
-  const wid = curWeapon(), scoped = zoom && wid === 'sniper';
+  const wid = curWeapon();
+  if (wid !== lastWid) { lastWid = wid; zoom = false; }        // picking / switching to a weapon (e.g. the sniper) never jumps into scope
+  const scoped = zoom && wid === 'sniper';
+  if (me.alive) myDeathT = -1e9; else if (myDeathT < 0) myDeathT = tn;
 
   if (myMesh) {
-    myMesh.visible = me.alive && !scoped;
+    const dying = !me.alive && tn - myDeathT < 2600;
+    myMesh.visible = (me.alive && !scoped) || dying;
     myMesh.position.set(...lp); myMesh.rotation.y = aimYaw;
     setWeapon(myMesh, wid || null);
-    animateSoldier(myMesh, { dt, t: tn, vx: local.vel[0], vz: local.vel[2], yaw: aimYaw, pitch: aimPitch, onGround: local.onGround, thrusting: local.thrusting && me.alive });
+    const RW = WEAPONS[wid], rlp = RW && tn < reloadEnd ? 1 - (reloadEnd - tn) / (RW.reload * 1000) : -1;
+    animateSoldier(myMesh, { dt, t: tn, vx: local.vel[0], vz: local.vel[2], yaw: aimYaw, pitch: aimPitch, onGround: local.onGround, thrusting: local.thrusting && me.alive,
+      reload: rlp, dead: me.alive ? -1 : (tn - myDeathT) / 1000 });
     setBlink(myMesh, me.prot, tn);
   }
 
@@ -1055,7 +1080,9 @@ function render(dt, alpha, tn) {
   const rt = serverNow() - CFG.INTERP_MS;
   for (const r of remotes.values()) {
     const s = interp(r.buf, rt);
-    r.mesh.visible = r.alive && !!s;
+    const dying = !r.alive && tn - (r.deathT ?? -1e9) < 2600;
+    r.mesh.visible = (r.alive || dying) && !!s;
+    r.bar.visible = r.alive; if (r.label) r.label.visible = r.alive;
     if (!s) continue;
     if (r.lp && dt > 0) {
       const k = 0.25;
@@ -1064,7 +1091,9 @@ function render(dt, alpha, tn) {
     r.lp = s.pos; r.rp = s.pos;
     r.mesh.position.set(...s.pos); r.mesh.rotation.y = s.yaw;
     setWeapon(r.mesh, r.wid || null);
-    animateSoldier(r.mesh, { dt, t: tn, vx: r.vx, vz: r.vz, yaw: s.yaw, pitch: s.pitch, onGround: !r.jet && Math.abs(r.vy) < 1.2, thrusting: r.jet && r.alive });
+    const RW = WEAPONS[r.wid], rlp = r.rl && RW ? Math.min(1, (tn - (r.rlStart || tn)) / (RW.reload * 1000)) : -1;
+    animateSoldier(r.mesh, { dt, t: tn, vx: r.alive ? r.vx : 0, vz: r.alive ? r.vz : 0, yaw: s.yaw, pitch: s.pitch, onGround: !r.jet && Math.abs(r.vy) < 1.2, thrusting: r.jet && r.alive,
+      reload: rlp, dead: r.alive ? -1 : (tn - r.deathT) / 1000 });
     setBlink(r.mesh, r.prot, tn);
     // health bar + name above the head; grows with distance so it stays readable
     const dx = s.pos[0] - c[0], dy = s.pos[1] - c[1], dz = s.pos[2] - c[2];
@@ -1176,13 +1205,13 @@ function initMenu() {
   const step = (d) => { settings.map = MAP_IDS[(MAP_IDS.indexOf(settings.map) + d + MAP_IDS.length) % MAP_IDS.length]; syncMap(); };
   function syncMap() {
     const m = MAPS[settings.map]; store.set('map', settings.map);
-    for (const el of document.querySelectorAll('.mapsel')) {
+    for (const el of document.querySelectorAll('.mapsel:not(#lmapsel)')) {
       drawMapPreview(el.querySelector('canvas'), m);
       el.querySelector('.mapname').textContent = m.name; el.querySelector('.mapdesc').textContent = m.desc;
     }
     $('quicksub').textContent = `Join the public ${m.name} lobby`;
   }
-  for (const el of document.querySelectorAll('.mapsel')) {
+  for (const el of document.querySelectorAll('.mapsel:not(#lmapsel)')) {
     for (const b of el.querySelectorAll('.mapnav')) b.onclick = () => { initAudio(); sfx('ui'); step(+b.dataset.dir); };
     el.querySelector('canvas').onclick = () => { initAudio(); sfx('ui'); step(1); };
   }
@@ -1214,6 +1243,11 @@ function initMenu() {
     $('roomin').focus(); $('joinmsg').textContent = 'Long-press the box and choose Paste.';
   };
   $('lcopy').onclick = (e) => copyRoom(roomCode, e.currentTarget);
+  for (const b of document.querySelectorAll('#lmapsel .mapnav')) b.onclick = () => {
+    initAudio(); sfx('ui');
+    const i = MAP_IDS.indexOf(lobbyState?.map || MAPC.id), next = MAP_IDS[(i + +b.dataset.dir + MAP_IDS.length) % MAP_IDS.length];
+    send({ type: 'lmap', map: next });
+  };
   $('lready').onclick = () => { initAudio(); sfx('ui'); const meL = lobbyState?.players.find((p) => p.id === myId); send({ type: 'ready', v: !meL?.ready }); };
   $('lleave').onclick = () => { leaveMatch(); showScreen('multi'); };
   if (new URLSearchParams(location.search).get('room')) setTimeout(() => showScreen('join'), 0);

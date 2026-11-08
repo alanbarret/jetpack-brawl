@@ -4,11 +4,15 @@ Multiplayer jetpack arena shooter: authoritative Node + WebSocket server, Three.
 
 ## Features
 - **Solo vs bots** (1-11 bots, Easy / Normal / Hard) and **online multiplayer** (public arena or private room codes, up to 12 players)
+- **Character animations**: idle breathing and glance-around, run cycle with shoulder swing, strafe lean, dangling legs in the air, landing crouch, hit flinch, fall-over death, and a full magazine-swap reload (gun tilts, hand to belt pouch, new mag, charging-handle slap) for you and every other player. Extra gear: mag pouches, thigh holster, goggles, radio antenna
+- **In-game stats**: kills (vs the kill limit), deaths, suicides (own grenade/rocket/void — counted separately, kills are never taken away), K/D, live rank and kill streak under the timer; streak call-outs in the feed
+- **Lobby arena picker**: the room host can switch the map in the lobby (everyone re-readies)
+- **Sniper** no longer jumps into scope when you switch to or pick it up
 - **Private rooms with a lobby**: Multiplayer → Create room gives a 5-letter code with a COPY button; friends use Join room (with a PASTE button). Everyone appears in the lobby, taps READY, and the match starts after a 3-second countdown once 2+ players are all ready. After the match everyone returns to the lobby. The code is never shown during a match. Quick play still drops you straight into a public arena
 - **Map boundary**: an invisible rounded wall follows the rock ring at every height, so nobody can walk or fly out of the map
 - **Natural maps**: no square walls. Each map is ringed by rocks, cliffs and trees (Deep Mine is a rock cave, Sky Islands a floating island), the ground and scenery run on to the horizon, and the limits are hidden behind the ring
 - **Grenades**: spawn with 3 Frag grenades; Gas and Proxy grenades are pickups in the arena (+2 each)
-- **Three grenade types (Mini Militia style)**: Frag (bounces and rolls, explodes after 2.6 s), Gas (poison cloud for 6 s) and Proxy mine (sticks where it lands, arms in 0.9 s, triggers when an enemy comes close). Realistic arc with drag, bounces and rolling, about 22 m max throw. Hold 💣 on phones to see the dotted path and blast radius; tap the chip above it (or press `T`) to switch type
+- **Three grenade types (Mini Militia style)**: Frag (bounces and rolls, explodes after 2.6 s), Gas (poison cloud for 6 s) and Proxy mine (sticks where it lands, arms in 0.9 s, triggers when anyone — including the thrower — comes close). Every grenade type hurts its thrower in full. Realistic arc with drag, bounces and rolling, about 22 m max throw. Hold 💣 on phones to see the dotted path and blast radius; tap the chip above it (or press `T`) to switch type
 - **Shotgun** is short range: 16 m max with damage falling off after 5 m
 - **Human-like bots**: slower reactions, aim that settles onto you, mostly walking, look-around pauses, slow down to shoot
 - **Controls lock while dead** and come back on respawn

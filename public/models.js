@@ -187,6 +187,8 @@ export function makeSoldier(tintColor = '#ffb43a') {
   const hips = new THREE.Group(); hips.position.y = 0.99; body.add(hips);
   hips.add(M(boxG(0.34, 0.2, 0.23), pants, 0, 0, 0, true));
   hips.add(M(boxG(0.37, 0.06, 0.25), s.poly, 0, 0.1, 0));
+  for (const x of [-0.1, 0.0, 0.1]) hips.add(M(boxG(0.075, 0.11, 0.05), cloth, x - 0.02, 0.06, -0.14, true));   // magazine pouches
+  hips.add(M(boxG(0.05, 0.03, 0.06), s.metal, 0.17, 0.11, -0.05));                                              // belt buckle
   const legs = [-1, 1].map((side) => {
     const hip = new THREE.Group(); hip.position.set(side * 0.13, -0.02, 0); hips.add(hip);
     const th = limbMesh(0.112, pants); place(th, [0, 0, 0], [0, -0.44, 0]); hip.add(th);
@@ -196,6 +198,7 @@ export function makeSoldier(tintColor = '#ffb43a') {
     knee.add(M(boxG(0.11, 0.11, 0.04), tint, 0, 0.0, -0.095));
     knee.add(M(boxG(0.12, 0.09, 0.27), s.boot, 0, -0.46, -0.045, true));
     knee.add(M(boxG(0.125, 0.03, 0.285), s.poly, 0, -0.51, -0.045));
+    if (side > 0) hip.add(M(boxG(0.07, 0.17, 0.12), s.poly, 0.1, -0.2, 0, true));   // thigh holster
     return { hip, knee };
   });
 
@@ -213,6 +216,8 @@ export function makeSoldier(tintColor = '#ffb43a') {
   const helmet = M(cached('helm', () => new THREE.SphereGeometry(0.148, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.56)), tint, 0, 0.02, 0, true);
   head.add(helmet);
   head.add(M(boxG(0.2, 0.055, 0.05), s.visor, 0, 0.01, -0.115));
+  for (const x of [-0.05, 0.05]) head.add(M(cylG(0.032, 0.032, 0.035, 10), s.visor, x, 0.115, -0.1).rotateX(Math.PI / 2.4));
+  head.add(M(boxG(0.3, 0.025, 0.02), s.poly, 0, 0.1, -0.02));                                                    // goggle strap
   head.add(M(boxG(0.17, 0.07, 0.08), s.poly, 0, -0.065, -0.075));
   for (const x of [-0.115, 0.115]) { const e = M(cylG(0.04, 0.04, 0.03, 10), s.poly, x, 0, 0); e.rotation.z = Math.PI / 2; head.add(e); }
 
@@ -220,6 +225,7 @@ export function makeSoldier(tintColor = '#ffb43a') {
   const pack = new THREE.Group(); pack.position.set(0, 0.34, 0.24); chest.add(pack);
   pack.add(M(boxG(0.36, 0.42, 0.08), s.metal, 0, 0, 0, true));
   pack.add(M(boxG(0.36, 0.05, 0.09), tint, 0, 0.15, 0));
+  pack.add(M(cylG(0.008, 0.012, 0.42, 5), s.poly, -0.16, 0.38, 0.03));                                          // radio antenna
   const flames = [];
   for (const side of [-1, 1]) {
     pack.add(M(cylG(0.075, 0.075, 0.5, 12), s.metalL, side * 0.1, 0.02, 0.08, true));
@@ -248,12 +254,13 @@ export function makeSoldier(tintColor = '#ffb43a') {
   flash.add(fc, M(sphG(0.06, 8, 6), s.flash, 0, 0, -0.02));
   mount.add(flash);
 
+  const mag = M(boxG(0.045, 0.13, 0.07), s.poly, 0, -0.07, 0); mag.visible = false; armL.hand.add(mag);
   solveArm(armR, SH_R, [MOUNT[0], MOUNT[1] - 0.045, MOUNT[2] + 0.01], 1);
   solveArm(armL, SH_L, [MOUNT[0] - 0.02, MOUNT[1] - 0.12, MOUNT[2] - 0.2], -1);
 
   root.userData = {
-    body, hips, chest, head, aim, mount, legs, flames, flash, knife, armL, weapon: null, wid: undefined,
-    phase: Math.random() * 6, airK: 0, lean: 0, recoil: 0, flashT: 0, melee: 0,
+    body, hips, chest, head, aim, mount, legs, flames, flash, knife, armL, mag, weapon: null, wid: undefined, gripL: [0, 0, 0],
+    phase: Math.random() * 6, seed: Math.random() * 10, airK: 0, airT: 0, land: 0, hitT: 0, roll: 0, lean: 0, recoil: 0, flashT: 0, melee: 0, reloading: false,
     blink: [tint, cloth, pants],
   };
   setWeapon(root, null);
@@ -272,7 +279,8 @@ export function setWeapon(m, wid) {
     u.flash.position.set(0, w.userData.my, w.userData.mz);
   } else u.flash.position.set(0, 0, -0.2);
   u.weapon && (u.weapon.visible = u.melee <= 0);
-  solveArm(u.armL, SH_L, [MOUNT[0] - 0.02, MOUNT[1] - 0.035, MOUNT[2] + fore], -1);
+  u.gripL = [MOUNT[0] - 0.02, MOUNT[1] - 0.035, MOUNT[2] + fore];
+  solveArm(u.armL, SH_L, u.gripL, -1);
 }
 
 export const kickRecoil = (m) => { m.userData.recoil = 1; };
@@ -291,41 +299,92 @@ export function setBlink(m, on, t) {
 }
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-// o: { dt, t, vx, vz, yaw, pitch, onGround, thrusting }
+export const hitFlinch = (m) => { m.userData.hitT = 1; };
+const ease = (x) => x * x * (3 - 2 * x);
+const lerp3 = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+// left-hand path for a magazine swap (aim-group space): grip → mag well → belt pouch → mag well → charging slap → grip
+function reloadHand(u, p) {
+  const G = u.gripL, W = [MOUNT[0] - 0.01, MOUNT[1] - 0.17, MOUNT[2] - 0.06], P = [-0.12, -0.6, -0.14], C = [MOUNT[0] - 0.06, MOUNT[1] + 0.06, MOUNT[2] + 0.05];
+  const K = [[0, G], [0.12, W], [0.3, P], [0.42, P], [0.62, W], [0.74, W], [0.84, C], [1, G]];
+  for (let i = 1; i < K.length; i++) if (p <= K[i][0]) { const [t0, a] = K[i - 1], [t1, b] = K[i]; return lerp3(a, b, ease((p - t0) / (t1 - t0 || 1))); }
+  return G;
+}
+// o: { dt, t, vx, vz, yaw, pitch, onGround, thrusting, reload (0..1 progress or -1), dead (seconds since death or -1) }
 export function animateSoldier(m, o) {
   const u = m.userData, dt = o.dt;
+  // ---- death: topple backwards, limbs go limp
+  if (o.dead >= 0) {
+    const k = Math.min(1, o.dead / 0.6), e = 1 - Math.pow(1 - k, 3), bounce = Math.sin(Math.min(1, o.dead / 0.9) * Math.PI) * 0.06 * (k >= 1 ? 1 : 0);
+    u.body.rotation.set(e * 1.42 - bounce, 0, e * 0.15); u.body.position.y = e * 0.22;
+    u.legs[0].hip.rotation.x = -0.25 * e; u.legs[1].hip.rotation.x = 0.15 * e;
+    u.legs[0].knee.rotation.x = -0.35 * e; u.legs[1].knee.rotation.x = -0.15 * e;
+    u.chest.rotation.set(-0.15 * e, 0, 0); u.head.rotation.set(0.5 * e, 0.3 * e, 0);
+    u.aim.rotation.set(-0.9 * e, 0, 0.2 * e);
+    for (const f of u.flames) f.visible = false;
+    u.flash.visible = false; u.mag.visible = false;
+    u.wasDead = true;
+    return;
+  }
+  if (u.wasDead) { u.wasDead = false; u.body.rotation.set(0, 0, 0); u.chest.rotation.set(0, 0, 0); u.head.rotation.set(0, 0, 0); u.aim.rotation.set(0, 0, 0); u.land = 0; u.airT = 0; }
+
   const sp = Math.hypot(o.vx, o.vz);
   const fwd = o.vx * -Math.sin(o.yaw) + o.vz * -Math.cos(o.yaw);
-  const k = o.onGround ? Math.min(1, sp / 5) : 0;
+  const side = o.vx * Math.cos(o.yaw) - o.vz * Math.sin(o.yaw);
+  const k = o.onGround ? Math.min(1, sp / 5) : 0, idle = 1 - Math.min(1, sp / 1.5);
   u.phase += dt * sp * 1.55 * (fwd < -0.5 ? -1 : 1);
   const ph = u.phase;
   u.airK += ((o.onGround ? 0 : 1) - u.airK) * Math.min(1, dt * 10);
   const a = u.airK, g = 1 - a;
+  // landing dip after a fall / flight
+  if (!o.onGround) u.airT += dt;
+  else { if (u.airT > 0.35) u.land = Math.min(1, 0.35 + u.airT * 0.35); u.airT = 0; }
+  u.land *= Math.exp(-dt * 6);
+  u.hitT *= Math.exp(-dt * 9);
 
-  const sw = Math.sin(ph) * 0.75 * k;
-  const c = Math.cos(ph);
+  // ---- legs: walk/run cycle, dangling while airborne, crouch on landing
+  const sw = Math.sin(ph) * 0.75 * k, c = Math.cos(ph);
   const kneeL = -Math.max(0, c) * 0.9 * k, kneeR = -Math.max(0, -c) * 0.9 * k;
-  u.legs[0].hip.rotation.x = sw * g + a * (o.thrusting ? -0.05 : 0.2);
-  u.legs[1].hip.rotation.x = -sw * g + a * (o.thrusting ? -0.25 : -0.15);
-  u.legs[0].knee.rotation.x = kneeL * g - a * 0.45;
-  u.legs[1].knee.rotation.x = kneeR * g - a * 0.35;
+  const dang = Math.sin(o.t * 0.004 + u.seed) * 0.12 * a * (o.thrusting ? 0.3 : 1);
+  u.legs[0].hip.rotation.x = sw * g + a * (o.thrusting ? -0.05 : 0.2) + dang + u.land * 0.45;
+  u.legs[1].hip.rotation.x = -sw * g + a * (o.thrusting ? -0.25 : -0.15) - dang + u.land * 0.45;
+  u.legs[0].knee.rotation.x = kneeL * g - a * 0.45 - u.land * 0.8;
+  u.legs[1].knee.rotation.x = kneeR * g - a * 0.35 - u.land * 0.8;
+  const strafe = clamp(side / 6, -1, 1) * k;                                  // legs splay a little when strafing
+  u.legs[0].hip.rotation.z = -Math.abs(strafe) * 0.12 + Math.sin(ph) * strafe * 0.18;
+  u.legs[1].hip.rotation.z = Math.abs(strafe) * 0.12 + Math.sin(ph) * strafe * 0.18;
 
+  // ---- torso: lean into motion, roll into strafes, breathe, flinch when hit
   const leanT = clamp(fwd * 0.022, -0.12, 0.3) * (o.onGround ? 1 : 0.7) + (o.thrusting && !o.onGround ? 0.1 : 0);
   u.lean += (leanT - u.lean) * Math.min(1, dt * 8);
-  u.chest.rotation.x = -u.lean;
-  u.body.position.y = Math.abs(Math.sin(ph)) * 0.035 * k;
-  u.chest.scale.y = 1 + Math.sin(o.t * 0.002) * 0.006;
-  u.head.rotation.x = clamp(o.pitch * 0.55, -0.5, 0.5) + u.lean * 0.8;
+  u.roll += (clamp(-side * 0.014, -0.09, 0.09) - u.roll) * Math.min(1, dt * 6);
+  u.body.rotation.set(0, 0, u.roll);
+  u.body.position.y = Math.abs(Math.sin(ph)) * 0.035 * k - u.land * 0.13;
+  u.chest.rotation.x = -u.lean + u.hitT * 0.28 + u.land * 0.12;
+  u.chest.rotation.y = Math.sin(ph) * 0.06 * k;                               // shoulders counter-swing
+  u.chest.scale.y = 1 + Math.sin(o.t * 0.0022 + u.seed) * 0.008 * (0.4 + idle);
+  u.head.rotation.x = clamp(o.pitch * 0.55, -0.5, 0.5) + u.lean * 0.8 - u.hitT * 0.25;
+  u.head.rotation.y = Math.sin(o.t * 0.0007 + u.seed) * 0.18 * idle * (o.reload >= 0 ? 0 : 1) - u.chest.rotation.y;
 
+  // ---- arms + weapon: recoil, run bob, idle sway, melee, reload
   u.recoil *= Math.exp(-dt * 16);
-  let rot = o.pitch + u.recoil * 0.06, pz = u.recoil * 0.07;
+  let rot = o.pitch + u.recoil * 0.06 + u.hitT * 0.12, pz = u.recoil * 0.07, rz = Math.sin(o.t * 0.0011 + u.seed) * 0.025 * idle;
+  const bob = Math.sin(ph * 2) * 0.014 * k;
   if (u.melee > 0) {
     u.melee = Math.max(0, u.melee - dt);
     const sw2 = Math.sin((1 - u.melee / 0.28) * Math.PI);
     rot += sw2 * 0.9; pz -= sw2 * 0.25;
     u.knife.visible = true; if (u.weapon) u.weapon.visible = false;
   } else if (u.knife.visible) { u.knife.visible = false; if (u.weapon) u.weapon.visible = true; }
-  u.aim.rotation.x = rot; u.aim.position.z = pz;
+  if (o.reload >= 0 && u.weapon && u.melee <= 0) {
+    const p = clamp(o.reload, 0, 1), tw = p < 0.14 ? ease(p / 0.14) : p > 0.86 ? ease((1 - p) / 0.14) : 1;
+    rot -= 0.38 * tw; rz += 0.5 * tw;                                          // tilt the gun to look into the mag well
+    u.mount.rotation.z = 0.35 * tw;
+    solveArm(u.armL, SH_L, reloadHand(u, p), -1);
+    u.mag.visible = (p > 0.12 && p < 0.3) || (p > 0.42 && p < 0.68);            // old mag out, new mag in
+    if (p > 0.74 && p < 0.84) pz -= Math.sin(((p - 0.74) / 0.1) * Math.PI) * 0.03;   // slap the charging handle
+    u.reloading = true;
+  } else if (u.reloading) { u.reloading = false; u.mount.rotation.z = 0; u.mag.visible = false; solveArm(u.armL, SH_L, u.gripL, -1); }
+  u.aim.rotation.set(rot, 0, rz); u.aim.position.set(0, 0.58 + bob, pz);
 
   if (u.flashT > 0) { u.flashT -= dt; if (u.flashT <= 0) u.flash.visible = false; }
   for (const f of u.flames) {

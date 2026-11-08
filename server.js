@@ -93,7 +93,7 @@ class Room {
       yaw: 0, pitch: 0, aimYaw: 0, aimPitch: 0, jet: false,
       hp: 100, armor: 0, alive: false, respawnAt: 0, protectUntil: 0,
       weapons: [null, null], slot: 0, nextFire: 0, reloadUntil: 0, nades: { frag: 3, gas: 0, prox: 0 }, nadeSel: 'frag', nextNade: 0, nextMelee: 0,
-      kills: 0, deaths: 0, lastDamage: 0, lastSeq: 0, budget: 0.1, lastInputAt: now(), history: [], priv: [],
+      kills: 0, deaths: 0, suicides: 0, lastDamage: 0, lastSeq: 0, budget: 0.1, lastInputAt: now(), history: [], priv: [],
       ai: bot ? newBotState(diff) : null,
     };
     this.players.set(p.id, p);
@@ -141,11 +141,11 @@ class Room {
   }
   backToLobby() {
     this.state = 'lobby'; this.projectiles = []; this.clouds = []; this.resetPickups();
-    for (const p of this.players.values()) { p.ready = false; p.alive = false; p.respawnAt = Infinity; p.kills = 0; p.deaths = 0; }
+    for (const p of this.players.values()) { p.ready = false; p.alive = false; p.respawnAt = Infinity; p.kills = 0; p.deaths = 0; p.suicides = 0; }
     this.sendLobby(true);
   }
   roster() {
-    const list = [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, kills: p.kills, deaths: p.deaths, bot: p.bot }));
+    const list = [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, kills: p.kills, deaths: p.deaths, suicides: p.suicides || 0, bot: p.bot }));
     for (const p of this.players.values()) send(p.ws, { type: 'r', list });
   }
   spawn(p) {
@@ -173,6 +173,11 @@ class Room {
     else if (m.type === 'a') this.onAction(p, m.a);
     else if (m.type === 'ping') send(p.ws, { type: 'pong', c: m.c, s: now() });
     else if (m.type === 'ready' && this.inLobby()) { p.ready = !!m.v; this.sendLobby(true); }
+    else if (m.type === 'lmap' && this.state === 'lobby' && p.id === this.host && MAPS[m.map] && m.map !== this.mapId) {
+      this.mapId = m.map; this.map = MAPS[m.map]; this.resetPickups();
+      for (const q of this.players.values()) q.ready = false;              // new arena: everyone confirms again
+      this.sendLobby(true);
+    }
     else if (m.type === 'chat') {
       const t = String(m.text || '').slice(0, 120).trim();
       if (t) this.events.push({ e: 'chat', n: p.name, c: p.color, text: t });
@@ -298,8 +303,10 @@ class Room {
     q.alive = false; q.hp = 0; q.deaths++; q.respawnAt = now() + CFG.RESPAWN_MS; q.jet = false; q.thrusting = false;
     const cw = q.weapons[q.slot];
     if (cw && cw.id !== 'pistol') this.drop(q.pos, cw);
-    if (att && att !== q) att.kills++; else if (q.kills > 0) q.kills--;
-    this.events.push({ e: 'kill', k: att && att !== q ? att.name : null, kc: att?.color, v: q.name, vc: q.color, w: wid, head });
+    if (att && att !== q) { att.kills++; att.streak = (att.streak || 0) + 1; if ([3, 5, 8, 12].includes(att.streak)) this.events.push({ e: 'streak', n: att.name, c: att.color, s: att.streak }); }
+    else q.suicides = (q.suicides || 0) + 1;                // own grenade / rocket / void: counted as a suicide, kills are kept
+    q.streak = 0;
+    this.events.push({ e: 'kill', k: att && att !== q ? att.name : null, kc: att?.color, v: q.name, vc: q.color, w: wid, head, sui: !att || att === q });
     this.roster();
     if (att && att.kills >= CFG.KILL_LIMIT) this.endMatch(att);
   }
@@ -382,7 +389,7 @@ class Room {
       } else if (pr.type === 'prox') {
         if (pr.stuck && t - pr.stuckAt > N.arm) {
           for (const q of this.players.values()) {
-            if (!q.alive || q.id === pr.owner || t < q.protectUntil) continue;
+            if (!q.alive || t < q.protectUntil) continue;            // the thrower can set off their own mine too
             if (Math.hypot(q.pos[0] - pr.pos[0], q.pos[1] + 0.9 - pr.pos[1], q.pos[2] - pr.pos[2]) < N.trig) { this.explode(pr, N.dmg, N.r); break; }
           }
         }
@@ -397,7 +404,7 @@ class Room {
       const att = this.players.get(c.owner) || null;
       for (const q of this.players.values()) {
         if (!q.alive || Math.hypot(q.pos[0] - c.pos[0], q.pos[1] + 0.9 - c.pos[1], q.pos[2] - c.pos[2]) > NADES.gas.r) continue;
-        this.damage(q, NADES.gas.dps * 0.5 * (q.id === c.owner ? 0.5 : 1), att, 'gas', false, c.pos);
+        this.damage(q, NADES.gas.dps * 0.5, att, 'gas', false, c.pos);
       }
     }
     this.clouds = this.clouds.filter((c) => t < c.until);
@@ -419,7 +426,7 @@ class Room {
         q.vel[0] += dir[0] * kb; q.vel[1] += dir[1] * kb + 3; q.vel[2] += dir[2] * kb;
       }
       let amt = dmg * (1 - (d / radius) * 0.7);
-      if (q.id === pr.owner) amt *= 0.5;
+      if (q.id === pr.owner && pr.type === 'rocket') amt *= 0.5;   // grenades hurt their thrower in full
       this.damage(q, amt, att, pr.type, false, pr.pos);
     }
   }
@@ -427,12 +434,12 @@ class Room {
   endMatch(winner) {
     this.state = 'ended'; this.endAt = now() + CFG.END_MS; this.projectiles = []; this.clouds = [];
     const standings = [...this.players.values()].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
-      .map((p) => ({ name: p.name, color: p.color, kills: p.kills, deaths: p.deaths }));
+      .map((p) => ({ name: p.name, color: p.color, kills: p.kills, deaths: p.deaths, suicides: p.suicides || 0 }));
     this.events.push({ e: 'end', winner: winner?.name || null, standings });
   }
   resetMatch() {
     this.state = 'playing'; this.matchEnd = now() + CFG.MATCH_MS; this.resetPickups();
-    for (const p of this.players.values()) { p.kills = 0; p.deaths = 0; this.spawn(p); }
+    for (const p of this.players.values()) { p.kills = 0; p.deaths = 0; p.suicides = 0; p.streak = 0; this.spawn(p); }
     this.events.push({ e: 'start' });
     this.roster();
   }
@@ -468,7 +475,7 @@ class Room {
     if (this.inLobby()) return;          // lobby sends its own 'lobby' messages
     const t = now();
     const ps = [...this.players.values()].map((p) => [p.id, r2(p.pos[0]), r2(p.pos[1]), r2(p.pos[2]), r2(p.aimYaw), r2(p.aimPitch),
-      p.alive ? 1 : 0, p.weapons[p.slot]?.id || '', t < p.protectUntil ? 1 : 0, Math.ceil(p.hp), p.jet && p.alive ? 1 : 0, Math.ceil(p.armor)]);
+      p.alive ? 1 : 0, p.weapons[p.slot]?.id || '', t < p.protectUntil ? 1 : 0, Math.ceil(p.hp), p.jet && p.alive ? 1 : 0, Math.ceil(p.armor), t < p.reloadUntil ? 1 : 0]);
     const pr = this.projectiles.map((q) => [q.id, q.type, r2(q.pos[0]), r2(q.pos[1]), r2(q.pos[2]), r2(q.vel[0]), r2(q.vel[1]), r2(q.vel[2]), q.stuck ? (t - q.stuckAt > NADES.prox.arm ? 2 : 1) : 0, q.normal ?? 1]);
     const pk = this.pickups.filter((k) => k.active).map((k) => [k.id, k.type, k.w || '', r2(k.pos[0]), r2(k.pos[1]), r2(k.pos[2])]);
     const ev = this.events; this.events = [];
@@ -476,7 +483,7 @@ class Room {
     for (const p of this.players.values()) {
       if (p.ws) send(p.ws, {
         type: 's', t, ack: p.lastSeq, st: this.state, time, ps, pr, pk, ev, pv: p.priv,
-        me: { pos: p.pos, vel: p.vel, og: p.onGround, fuel: p.fuel, gt: p.groundTime, ha: p.hoverArmed, pj: p.pj, air: p.air, th: p.thrusting,
+        me: { k: p.kills, d: p.deaths, su: p.suicides || 0, sk: p.streak || 0, pos: p.pos, vel: p.vel, og: p.onGround, fuel: p.fuel, gt: p.groundTime, ha: p.hoverArmed, pj: p.pj, air: p.air, th: p.thrusting,
               hp: Math.ceil(p.hp), ar: p.armor, alive: p.alive, rs: Math.max(0, p.respawnAt - t), w: p.weapons, slot: p.slot,
               rl: p.reloadUntil ? Math.max(0, p.reloadUntil - t) : 0, gn: p.nades, gs: p.nadeSel, prot: t < p.protectUntil },
       });

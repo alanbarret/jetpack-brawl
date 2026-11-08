@@ -125,6 +125,10 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 .slot.on{color:var(--ink);outline:2px solid var(--acc)}
 #nades{position:fixed;right:calc(18px + var(--sar));bottom:calc(136px + var(--sab));font-size:15px;font-weight:700;text-shadow:0 1px 3px #000}
 #timer{position:fixed;top:calc(10px + var(--sat));left:50%;transform:translateX(-50%);background:#000a;padding:6px 14px;border-radius:8px;font-weight:800;font-size:18px}
+#stats{position:fixed;top:calc(64px + var(--sat));left:50%;transform:translateX(-50%);display:flex;gap:6px;white-space:nowrap;pointer-events:none}
+#stats span{background:rgba(10,14,9,.72);border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700;color:var(--ink);letter-spacing:.3px}
+#stats b{color:#fff;font-size:13px}#stats small{color:var(--ink2);font-weight:700}
+#stats .hot{border-color:#ff9a3a;color:#ffc58a}#stats .hot b{color:#ffb35c}
 #roomrow{position:fixed;top:calc(46px + var(--sat));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;white-space:nowrap}
 #room{font-size:11px;font-weight:700;color:var(--ink);text-shadow:0 1px 3px #000}
 .cbtn{pointer-events:auto;cursor:pointer;border:1.5px solid #ffd88a;background:rgba(10,14,9,.85);color:#ffd88a;font-weight:800;font-size:10px;letter-spacing:1px;padding:3px 7px;border-radius:5px}
@@ -228,7 +232,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
   .bars .lbl{display:none}
   #slots{top:auto!important;bottom:calc(44px + var(--sab))!important;left:50%;right:auto!important;transform:translateX(-50%);pointer-events:auto}
   #slots .slot{padding:8px 14px;font-size:13px;cursor:pointer}
-  #feed{top:calc(68px + var(--sat));left:50%;right:auto;transform:translateX(-50%);text-align:center;font-size:11px;white-space:nowrap}
+  #feed{top:calc(96px + var(--sat));left:50%;right:auto;transform:translateX(-50%);text-align:center;font-size:11px;white-space:nowrap}
   #ammo{bottom:auto;top:calc(8px + var(--sat));right:calc(58px + var(--sar));font-size:22px;display:flex;align-items:baseline;gap:8px}
   #ammo span{display:inline;font-size:12px}
   #slots{bottom:auto;top:calc(56px + var(--sat));right:calc(58px + var(--sar))}
@@ -301,7 +305,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
   <div class="screen" id="s-lobby">
     <h2>Room lobby</h2>
     <div class="codebox"><span>CODE <b id="lcode">—</b></span><button class="cbtn" id="lcopy">📋 COPY</button></div>
-    <div class="lmap" id="lmap"></div>
+    <div class="mapsel" id="lmapsel"><button class="mapnav" data-dir="-1" aria-label="Previous map">‹</button><canvas width="168" height="100"></canvas><div class="mapinfo"><b class="mapname" id="lmapname"></b><small class="mapdesc" id="lmapdesc"></small></div><button class="mapnav" data-dir="1" aria-label="Next map">›</button></div>
     <div class="lplayers" id="lplayers"></div>
     <div class="lstatus" id="lstatus">Waiting for players…</div>
     <button class="mbtn primary" id="lready"><span class="ico">✔</span><span id="lreadyt">READY</span></button>
@@ -354,7 +358,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 
 <div id="hud" class="ov">
   <canvas id="mm" width="140" height="140"></canvas>
-  <div id="timer">8:00</div><div id="roomrow"><span id="room"></span><button id="copyroom" class="cbtn" title="Copy room code">📋 COPY</button></div>
+  <div id="timer">8:00</div><div id="stats"></div><div id="roomrow"><span id="room"></span><button id="copyroom" class="cbtn" title="Copy room code">📋 COPY</button></div>
   <div id="feed"></div>
   <div id="scope"></div><div id="cross"></div><div id="hitm"></div><div id="vig"></div><div id="ddir"></div>
   <div class="bars">
