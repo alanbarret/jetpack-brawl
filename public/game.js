@@ -727,20 +727,59 @@ function handlePriv(e) {
 
 // ---------- camera & aiming
 function curWeapon() { return me?.w?.[me.slot]?.id; }
-function cameraRig(pos) {
+// Third-person camera with collision. 1) the over-the-shoulder offset is pulled in if a wall is beside/above you,
+// 2) the boom behind the shoulder is tested with five rays (a small box around the lens, so screen edges don't poke
+// through walls), 3) when squeezed against a wall the camera rises over your head, and `close` tells the renderer to
+// hide your own model instead of putting the camera inside it. With `smooth`, it snaps in instantly and eases back out.
+let camDist = 4.2, camClose = 0, lastCam = null;
+// camera-only blockers: the full visual size of rocks and tree canopies (their gameplay colliders are smaller)
+const camBlockCache = new Map();
+function camBlocks(map) {
+  if (camBlockCache.has(map.id)) return camBlockCache.get(map.id);
+  const out = [];
+  for (const d of map.deco) {
+    if (d.k === 'rock') { const h = Math.max(d.sx, d.sz) * 0.56; out.push({ min: [d.x - h, 0, d.z - h], max: [d.x + h, d.sy * 0.95, d.z + h] }); }
+    else {
+      const [rf, y0] = d.style === 'pine' ? [0.32, 0.2] : d.style === 'acacia' ? [0.5, 0.72] : [0.31, 0.3];
+      const h = d.sy * rf; out.push({ min: [d.x - h, d.sy * y0, d.z - h], max: [d.x + h, d.sy * 1.02, d.z + h] });
+    }
+  }
+  camBlockCache.set(map.id, out); return out;
+}
+function camRay(o, d, maxT) {
+  let t = rayWorld(o, d, maxT, MAPC);
+  for (const b of camBlocks(MAPC)) { const tt = rayBox(o, d, b.min, b.max); if (tt < t) t = tt; }
+  return t;
+}
+function cameraRig(pos, smooth = false, dt = 0) {
   const eye = [pos[0], pos[1] + CFG.EYE, pos[2]];
   const fwd = aimDir(yaw, pitch);
-  if (zoom && curWeapon() === 'sniper') return { eye, cam: eye, fwd };
-  const dist = zoom ? 2.2 : 4.2;
-  const right = [Math.cos(yaw), 0, -Math.sin(yaw)];
-  const want = add(add(eye, mul(fwd, -dist)), [right[0] * 0.8, 0.35, right[2] * 0.8]);
-  const dv = sub(want, eye), L = len(dv), dir = mul(dv, 1 / L);
-  const hit = rayWorld(eye, dir, L, MAPC);
-  const d = hit < L ? Math.max(0.2, hit - 0.25) : L;
-  return { eye, cam: add(eye, mul(dir, d)), fwd };
+  if (zoom && curWeapon() === 'sniper') return { eye, cam: eye, fwd, close: 1 };
+  const want = zoom ? 2.2 : 4.2;
+  const right = [Math.cos(yaw), 0, -Math.sin(yaw)], back = mul(fwd, -1);
+  // 1) shoulder pivot
+  const so = [right[0] * 0.8, 0.35, right[2] * 0.8], sL = len(so), sDir = mul(so, 1 / sL);
+  const sHit = camRay(eye, sDir, sL + 0.35);
+  const pivot = add(eye, mul(sDir, Math.max(0, Math.min(sL, sHit - 0.35))));
+  // 2) boom: centre + four corners of the lens
+  let hit = want;
+  for (const [a, b] of [[0, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    const o = add(pivot, [right[0] * a * 0.22, b * 0.16, right[2] * a * 0.22]);
+    hit = Math.min(hit, camRay(o, back, want + 0.4));
+  }
+  let d = Math.max(0, Math.min(want, hit - 0.35));
+  if (smooth) { camDist = d < camDist ? d : camDist + (d - camDist) * Math.min(1, dt * 3.5); d = Math.min(d, camDist); }
+  // 3) squeezed: lift the camera over the head (only if there is head-room)
+  const squeeze = 1 - Math.min(1, d / 1.6);
+  let lift = 0;
+  if (squeeze > 0) { const up = camRay(pivot, [0, 1, 0], 1); lift = Math.max(0, Math.min(0.55 * squeeze, up - 0.3)); }
+  const cam = add(add(pivot, mul(back, d)), [0, lift, 0]);
+  const close = 1 - Math.min(1, Math.max(0, (d - 0.55) / 0.5));   // 1 = the camera would sit inside your own body
+  return { eye, cam, fwd, close };
 }
 function computeAim() {
-  const rig = cameraRig(local.pos);
+  // shoot along the line through the camera the player actually sees (incl. smoothing / lift)
+  const rig = lastCam ? { eye: [local.pos[0], local.pos[1] + CFG.EYE, local.pos[2]], cam: lastCam, fwd: aimDir(yaw, pitch) } : cameraRig(local.pos);
   let t = rayWorld(rig.cam, rig.fwd, 300, MAPC), onR = null;
   for (const r of remotes.values()) {
     if (!r.alive || !r.rp) continue;
@@ -1057,9 +1096,10 @@ function render(dt, alpha, tn) {
   const scoped = zoom && wid === 'sniper';
   if (me.alive) myDeathT = -1e9; else if (myDeathT < 0) myDeathT = tn;
 
+  const rig = cameraRig(lp, true, dt); camClose = rig.close; lastCam = rig.cam;
   if (myMesh) {
     const dying = !me.alive && tn - myDeathT < 2600;
-    myMesh.visible = (me.alive && !scoped) || dying;
+    myMesh.visible = (me.alive && !scoped && camClose < 0.5) || dying;
     myMesh.position.set(...lp); myMesh.rotation.y = aimYaw;
     setWeapon(myMesh, wid || null);
     const RW = WEAPONS[wid], rlp = RW && tn < reloadEnd ? 1 - (reloadEnd - tn) / (RW.reload * 1000) : -1;
@@ -1068,7 +1108,6 @@ function render(dt, alpha, tn) {
     setBlink(myMesh, me.prot, tn);
   }
 
-  const rig = cameraRig(lp);
   let c = rig.cam;
   if (shake > 0) { c = add(c, [(Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake]); shake = Math.max(0, shake - dt * 1.5); }
   camera.position.set(...c);
@@ -1156,7 +1195,7 @@ function leaveMatch() {
   if (myMesh) { scene.remove(myMesh); myMesh = null; }
   roster.clear(); pending.length = 0; seq = 0; synced = false;
   MAPC = MAP; loadMapVisuals(MAP);
-  me = null; connected = false; inMenu = true; paused = false; zoom = false; state = 'playing';
+  me = null; connected = false; inMenu = true; paused = false; zoom = false; state = 'playing'; lastCam = null; camDist = 4.2;
   for (const k in keys) keys[k] = false;
   resetTouch();
   for (const id of ['chatlog', 'feed']) $(id).innerHTML = '';
