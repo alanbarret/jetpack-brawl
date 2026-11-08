@@ -55,7 +55,7 @@ function pickGoal(room, p) {
     let want = false;
     if (k.type === 'health') want = p.hp < 65;
     else if (k.type === 'shield') want = p.armor < 40;
-    else if (k.type === 'grenade') want = nadeCount(p) < 3;
+    else if (k.type === 'grenade') want = (p.nades[k.w] || 0) < 2 && nadeCount(p) < 5;
     else if (k.type === 'weapon') want = !hasGun || ammoLow;
     if (!want) continue;
     const d = Math.hypot(k.pos[0] - p.pos[0], (k.pos[1] - p.pos[1]) * 1.5, k.pos[2] - p.pos[2]);

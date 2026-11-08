@@ -171,12 +171,106 @@ function buildArena(map) {
     m.castShadow = m.receiveShadow = true; arenaGroup.add(m);
     if (Math.max(...s) < 60) m.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(...s)), edge));
   }
+  buildNature(map, arenaGroup);
   const lamps = isTouch ? map.lamps.slice(0, 4) : map.lamps;     // lamp light (Deep Mine)
   for (const [x, y, z] of lamps) {
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 8), new THREE.MeshBasicMaterial({ color: '#ffd9a0' }));
     bulb.position.set(x, y, z);
     const l = new THREE.PointLight('#ffb35c', 110, 46, 2); bulb.add(l);
     arenaGroup.add(bulb);
+  }
+}
+// ---------- natural scenery: ground to the horizon, instanced rocks and trees (colliders come from maps.js)
+let groundTex = null;
+function groundTexture() {
+  if (groundTex) return groundTex;
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const x = c.getContext('2d');
+  x.fillStyle = '#d6d6d6'; x.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 260; i++) {                      // soft blotches = patches of grass / sand / snow
+    const r = 6 + Math.random() * 26, v = 175 + (Math.random() * 70 | 0);
+    const g = x.createRadialGradient(0, 0, 0, 0, 0, r); g.addColorStop(0, `rgba(${v},${v},${v},.55)`); g.addColorStop(1, `rgba(${v},${v},${v},0)`);
+    x.save(); x.translate(Math.random() * 256, Math.random() * 256); x.fillStyle = g; x.fillRect(-r, -r, r * 2, r * 2); x.restore();
+  }
+  for (let i = 0; i < 2600; i++) { const v = 150 + (Math.random() * 100 | 0); x.fillStyle = `rgba(${v},${v},${v},.8)`; x.fillRect(Math.random() * 256, Math.random() * 256, 1.5, 1.5); }
+  groundTex = new THREE.CanvasTexture(c);
+  groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping; groundTex.colorSpace = THREE.SRGBColorSpace; groundTex.anisotropy = 4;
+  return groundTex;
+}
+let rockGeos = null;
+function rockGeometries() {
+  if (rockGeos) return rockGeos;
+  rockGeos = [];
+  for (let v = 0; v < 4; v++) {
+    const g = new THREE.IcosahedronGeometry(1, 1), p = g.attributes.position;
+    const hash = (a, b, c) => { const s = Math.sin(a * 12.9898 + b * 78.233 + c * 37.719 + v * 19.17) * 43758.5453; return s - Math.floor(s); };
+    for (let i = 0; i < p.count; i++) {
+      let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const k = 0.78 + hash(Math.round(x * 100), Math.round(y * 100), Math.round(z * 100)) * 0.42;
+      x *= k; z *= k; y = Math.max(y * k, -0.55);            // flat-ish base
+      p.setXYZ(i, x, (y + 0.55) / 1.6, z);                   // base at 0, top near 1
+    }
+    g.computeVertexNormals(); rockGeos.push(g);
+  }
+  return rockGeos;
+}
+function buildNature(map, group) {
+  const N = map.nature, dummy = new THREE.Object3D(), col = new THREE.Color();
+  // ground
+  const gt = groundTexture();
+  const gmat = new THREE.MeshStandardMaterial({ color: map.ground, map: gt, roughness: 1 });
+  if (N.island) {
+    const rI = Math.hypot(map.w, map.d) / 2 + 3, t2 = gt.clone(); t2.needsUpdate = true; t2.repeat.set(rI / 7, rI / 7);
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(rI, rI * 0.96, 3, 56), [new THREE.MeshStandardMaterial({ color: '#7c6a4f', roughness: 1 }), new THREE.MeshStandardMaterial({ color: map.ground, map: t2, roughness: 1 }), gmat]);
+    top.position.y = -1.5; top.receiveShadow = true; group.add(top);
+    const under = new THREE.Mesh(new THREE.ConeGeometry(rI * 0.95, rI * 1.1, 11), new THREE.MeshStandardMaterial({ color: '#7c6a4f', roughness: 1, flatShading: true }));
+    under.rotation.x = Math.PI; under.position.y = -3 - rI * 0.55; group.add(under);
+  } else {
+    const size = N.indoor ? Math.max(map.w, map.d) + 20 : 1800, t2 = gt.clone(); t2.needsUpdate = true; t2.repeat.set(size / 16, size / 16);
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshStandardMaterial({ color: map.ground, map: t2, roughness: 1 }));
+    plane.rotation.x = -Math.PI / 2; plane.receiveShadow = true; group.add(plane);
+  }
+  // rocks (one instanced mesh per shape variant)
+  const items = [...map.deco, ...map.far], rocks = items.filter((d) => d.k === 'rock'), trees = items.filter((d) => d.k === 'tree');
+  const geos = rockGeometries(), rmat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, flatShading: true });
+  for (let v = 0; v < 4; v++) {
+    const list = rocks.filter((r) => r.v === v); if (!list.length) continue;
+    const im = new THREE.InstancedMesh(geos[v], rmat, list.length);
+    list.forEach((r, i) => {
+      dummy.position.set(r.x, -0.15, r.z); dummy.rotation.set(0, r.rot, 0); dummy.scale.set(r.sx / 2, r.sy, r.sz / 2); dummy.updateMatrix();
+      im.setMatrixAt(i, dummy.matrix);
+      col.set(r.c).offsetHSL(0, 0, ((i * 37) % 11) / 110 - 0.05); im.setColorAt(i, col);
+    });
+    im.castShadow = im.receiveShadow = true; group.add(im);
+  }
+  // trees: one instanced trunk mesh + instanced foliage layers
+  if (trees.length) {
+    const style = trees[0].style;
+    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.18, 0.28, 1, 7).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: '#6b4a2b', roughness: 1 }), trees.length);
+    const leafCol = style === 'pine' ? '#2f5d48' : style === 'acacia' ? '#7a8b3c' : '#3f8f4a';
+    const lmat = new THREE.MeshStandardMaterial({ color: leafCol, roughness: 0.9, flatShading: true });
+    const layers = style === 'pine'
+      ? [[new THREE.ConeGeometry(1, 1, 8).translate(0, 0.5, 0), 0.22, 0.34, 0.42], [new THREE.ConeGeometry(1, 1, 8).translate(0, 0.5, 0), 0.45, 0.27, 0.36], [new THREE.ConeGeometry(1, 1, 8).translate(0, 0.5, 0), 0.66, 0.19, 0.34]]
+      : style === 'acacia'
+        ? [[new THREE.IcosahedronGeometry(1, 1), 0.86, 0.5, 0.14]]
+        : [[new THREE.IcosahedronGeometry(1, 1), 0.62, 0.32, 0.3], [new THREE.IcosahedronGeometry(1, 1), 0.8, 0.22, 0.2]];
+    const leafMeshes = layers.map(([g]) => new THREE.InstancedMesh(g, lmat, trees.length));
+    trees.forEach((t, i) => {
+      const trunkH = style === 'pine' ? 0.3 : style === 'acacia' ? 0.86 : 0.62;
+      dummy.position.set(t.x, 0, t.z); dummy.rotation.set(0, t.rot, 0); dummy.scale.set(t.sy / 9, t.sy * trunkH, t.sy / 9); dummy.updateMatrix(); trunk.setMatrixAt(i, dummy.matrix);
+      layers.forEach(([, yf, rf, hf], k) => {
+        dummy.position.set(t.x, t.sy * yf, t.z); dummy.scale.set(t.sy * rf, t.sy * hf, t.sy * rf); dummy.updateMatrix();
+        leafMeshes[k].setMatrixAt(i, dummy.matrix);
+        col.set(leafCol).offsetHSL(0, 0, ((i * 29) % 9) / 90 - 0.05); leafMeshes[k].setColorAt(i, col);
+      });
+    });
+    trunk.castShadow = true; group.add(trunk);
+    for (const m of leafMeshes) { m.castShadow = true; group.add(m); }
+    if (style === 'pine' && map.id === 'frostbite') {         // snow on the tips
+      const snow = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 8).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: '#f4fbff', roughness: 0.8, flatShading: true }), trees.length);
+      trees.forEach((t, i) => { dummy.position.set(t.x, t.sy * 0.8, t.z); dummy.rotation.set(0, t.rot, 0); dummy.scale.set(t.sy * 0.1, t.sy * 0.2, t.sy * 0.1); dummy.updateMatrix(); snow.setMatrixAt(i, dummy.matrix); });
+      group.add(snow);
+    }
   }
 }
 // Swap the whole scenery (boxes, sky, fog, lights) to another map.
@@ -230,7 +324,7 @@ function makePickup(type, w) {
     m = new THREE.Group(); const mt = em('#ff3344');
     m.add(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.2), mt), new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.2), mt));
   } else if (type === 'shield') m = new THREE.Mesh(new THREE.OctahedronGeometry(0.35), em('#4488ff'));
-  else m = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), em('#55aa44'));
+  else { m = new THREE.Group(); const g = makeProjMesh(w || 'frag'); g.scale.setScalar(2.4); g.position.y = -0.15; m.add(g); m.add(makeLabel(NADES[w || 'frag'].name, '#fff', 0.55, 0.6)); }
   return m;
 }
 function makeRemote(id) {
@@ -576,7 +670,7 @@ function handlePriv(e) {
     if (e.from) { const dx = e.from[0] - local.pos[0], dz = e.from[1] - local.pos[2]; if (dx || dz) { dmgAngle = Math.atan2(-dx, -dz); dmgDirT = 1.2; } }
   } else if (e.e === 'spawn') { yaw = e.yaw; pitch = 0; }
   else if (e.e === 'pick') {
-    toast(e.type === 'weapon' ? `+ ${WEAPONS[e.w].name}` : e.type === 'health' ? '+50 Health' : e.type === 'shield' ? '+50 Shield' : '+1 of each grenade');
+    toast(e.type === 'weapon' ? `+ ${WEAPONS[e.w].name}` : e.type === 'health' ? '+50 Health' : e.type === 'shield' ? '+50 Shield' : `+2 ${NADES[e.w]?.name || ''} grenades`);
     sfx('pick');
   }
 }
@@ -612,7 +706,7 @@ function computeAim() {
 // ---------- input
 function gatherInput() {
   let mx = 0, mz = 0;
-  const typing = chatOpen || paused || !me?.alive;
+  const typing = chatOpen || paused || !me?.alive || state !== 'playing';
   if (!typing) {
     if (keys.KeyW) mz += 1; if (keys.KeyS) mz -= 1; if (keys.KeyD) mx += 1; if (keys.KeyA) mx -= 1;
   }
@@ -629,7 +723,7 @@ function gatherInput() {
 }
 // gentle aim pull toward the enemy nearest the crosshair (touch only, while the player is aiming/moving)
 function aimAssist(dt) {
-  if (!isTouch || settings.assist === 'off' || !me?.alive || !touch.aiming || paused) return;
+  if (!isTouch || settings.assist === 'off' || !me?.alive || !touch.aiming || paused || state !== 'playing') return;
   const hi = settings.assist === 'high', cone = hi ? 0.2 : 0.12, pull = hi ? 4.5 : 2.2;
   const cam = cameraRig(local.pos).cam;
   let best = null, bestErr = cone;
@@ -758,7 +852,7 @@ initControls({
   isZoom: () => zoom, setZoom: (v) => { zoom = v; },
   act: (a) => sendAct(a), melee: () => doMelee(),
   toggleBoard: () => { boardOpen = !boardOpen; renderBoard(); $('board').style.display = boardOpen ? 'block' : 'none'; },
-  active: () => connected && !paused && !inMenu && !!me?.alive,
+  active: () => connected && !paused && !inMenu && !!me?.alive && state === 'playing',
   fuel: () => local.fuel, slot: () => me?.slot ?? 0,
   nearPickup: () => {
     if (!me?.alive) return false;
@@ -815,6 +909,8 @@ function drawMinimap() {
     if (!b.c || b.min[1] < 0 || b.max[0] - b.min[0] > M.w * 0.85 || b.max[2] - b.min[2] > M.d * 0.85) continue;
     mctx.fillRect(X(b.min[0]), Z(b.min[2]), (b.max[0] - b.min[0]) * k, (b.max[2] - b.min[2]) * k);
   }
+  mctx.fillStyle = 'rgba(120,105,85,.75)';
+  for (const r of M.deco) { mctx.beginPath(); mctx.arc(X(r.x), Z(r.z), Math.max(1, ((r.sx || 2) / 2) * k), 0, 7); mctx.fill(); }
   for (const r of remotes.values()) {
     if (!r.alive || !r.rp) continue;
     mctx.fillStyle = roster.get(r.id)?.color || '#f44';
@@ -839,7 +935,7 @@ function updateHUD(dt) {
   setHTML($('nades'), NADE_TYPES.map((k) => `<span class="ng ${k === gs ? 'on' : ''}">${NADES[k].short} ${gn[k] || 0}</span>`).join(''));
   const nt = document.querySelector('#touch [data-id=ntype]');
   if (nt) setHTML(nt, `${NADES[gs].short} ×${gn[gs] || 0} ⟳`);
-  const dead = !me.alive;
+  const dead = !me.alive || state !== 'playing';            // dead, or the match has ended
   if (dead !== wasDead) { wasDead = dead; $('touch').classList.toggle('deadctl', dead); if (dead) { resetTouch(); zoom = false; } }
   const tl = Math.max(0, timeLeft - (tn - timeLeftAt));
   $('timer').textContent = state === 'ended' ? 'Next match ' + fmt(tl) : fmt(tl);
@@ -1025,7 +1121,9 @@ function drawMapPreview(cv, map) {
   const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, t.sky[0]); g.addColorStop(1, t.sky[2]);
   x.fillStyle = g; x.fillRect(0, 0, W, H);
   const k = Math.min((W - 16) / map.w, (H - 16) / map.d), ox = (W - map.w * k) / 2, oz = (H - map.d * k) / 2;
-  x.fillStyle = map.boxes[0].c || '#555'; x.fillRect(ox, oz, map.w * k, map.d * k);
+  x.fillStyle = map.ground; x.beginPath(); x.ellipse(W / 2, H / 2, (map.w * k) / 2, (map.d * k) / 2, 0, 0, 7); x.fill();
+  x.fillStyle = map.nature.rock;
+  for (const r of map.deco) { x.beginPath(); x.arc(ox + (r.x + map.w / 2) * k, oz + (r.z + map.d / 2) * k, Math.max(1.2, ((r.sx || 2) / 2) * k), 0, 7); x.fill(); }
   const list = map.boxes.filter((b) => b.c && b.min[1] >= 0 && b.max[0] - b.min[0] <= map.w * 0.85 && b.max[2] - b.min[2] <= map.d * 0.85).sort((a, b) => a.max[1] - b.max[1]);
   for (const b of list) {
     const rx = ox + (b.min[0] + map.w / 2) * k, rz = oz + (b.min[2] + map.d / 2) * k, rw = (b.max[0] - b.min[0]) * k, rd = (b.max[2] - b.min[2]) * k;
@@ -1034,7 +1132,6 @@ function drawMapPreview(cv, map) {
     x.fillStyle = b.c; x.fillRect(rx, rz, rw, rd);
     x.strokeStyle = 'rgba(0,0,0,.45)'; x.lineWidth = 1; x.strokeRect(rx + 0.5, rz + 0.5, rw, rd);
   }
-  x.strokeStyle = 'rgba(255,255,255,.55)'; x.lineWidth = 2; x.strokeRect(ox, oz, map.w * k, map.d * k);
 }
 function initMenu() {
   if (!MAPS[settings.map]) settings.map = 'outpost';

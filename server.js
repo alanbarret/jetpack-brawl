@@ -80,7 +80,7 @@ class Room {
     for (let i = 0; i < (opts.bots || 0); i++) this.addBot(opts.diff);
   }
   resetPickups() {
-    this.pickups = this.map.pickups.map((n, i) => ({ id: i, type: n.type, w: n.type === 'weapon' ? rnd(WEAPON_POOL) : null, pos: n.pos, active: true, respawnAt: 0 }));
+    this.pickups = this.map.pickups.map((n, i) => ({ id: i, type: n.type, w: n.type === 'weapon' ? rnd(WEAPON_POOL) : n.type === 'grenade' ? (n.w || 'frag') : null, pos: n.pos, active: true, respawnAt: 0 }));
   }
   humans() { let n = 0; for (const p of this.players.values()) if (!p.bot) n++; return n; }
   add(ws, name, bot = false, diff = 'normal') {
@@ -91,7 +91,7 @@ class Room {
       hoverArmed: false, pj: false, air: 0, thrusting: false,
       yaw: 0, pitch: 0, aimYaw: 0, aimPitch: 0, jet: false,
       hp: 100, armor: 0, alive: false, respawnAt: 0, protectUntil: 0,
-      weapons: [null, null], slot: 0, nextFire: 0, reloadUntil: 0, nades: { frag: 2, gas: 1, prox: 1 }, nadeSel: 'frag', nextNade: 0, nextMelee: 0,
+      weapons: [null, null], slot: 0, nextFire: 0, reloadUntil: 0, nades: { frag: 3, gas: 0, prox: 0 }, nadeSel: 'frag', nextNade: 0, nextMelee: 0,
       kills: 0, deaths: 0, lastDamage: 0, lastSeq: 0, budget: 0.1, lastInputAt: now(), history: [], priv: [],
       ai: bot ? newBotState(diff) : null,
     };
@@ -130,7 +130,7 @@ class Room {
     Object.assign(p, {
       pos: [...best], vel: [0, 0, 0], onGround: false, hp: 100, armor: 0, alive: true, fuel: 1, groundTime: 0,
       hoverArmed: false, pj: false, air: 0, thrusting: false, jet: false,
-      weapons: [mkW('pistol'), null], slot: 0, nades: { frag: 2, gas: 1, prox: 1 }, reloadUntil: 0, nextFire: 0,
+      weapons: [mkW('pistol'), null], slot: 0, nades: { frag: 3, gas: 0, prox: 0 }, nadeSel: 'frag', reloadUntil: 0, nextFire: 0,
       protectUntil: now() + CFG.PROTECT_MS, history: [],
     });
     p.yaw = p.aimYaw = Math.atan2(best[0], best[2]);  // face map centre
@@ -303,7 +303,7 @@ class Room {
       let took = false;
       if (k.type === 'health' && p.hp < 100) { p.hp = Math.min(100, p.hp + 50); took = true; }
       else if (k.type === 'shield' && p.armor < 100) { p.armor = Math.min(100, p.armor + 50); took = true; }
-      else if (k.type === 'grenade' && NADE_TYPES.some((ty) => p.nades[ty] < NADE_MAX)) { for (const ty of NADE_TYPES) p.nades[ty] = Math.min(NADE_MAX, p.nades[ty] + 1); took = true; }
+      else if (k.type === 'grenade' && p.nades[k.w] < NADE_MAX) { p.nades[k.w] = Math.min(NADE_MAX, p.nades[k.w] + 2); if (p.nades[p.nadeSel] === 0) p.nadeSel = k.w; took = true; }
       else if (k.type === 'weapon') {
         const W = WEAPONS[k.w];
         const have = p.weapons.find((w) => w && w.id === k.w);
