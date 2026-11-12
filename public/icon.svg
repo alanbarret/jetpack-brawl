@@ -1,1 +1,67 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#1b2a17"/><path d="M22 14h20l4 10v14H18V24z" fill="#ffb43a"/><rect x="24" y="38" width="6" height="10" rx="2" fill="#d9d9d9"/><rect x="34" y="38" width="6" height="10" rx="2" fill="#d9d9d9"/><path d="M27 48l-3 10 6-6zM37 48l3 10-6-6z" fill="#ff7a1a"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16345c"/><stop offset=".55" stop-color="#3a78b8"/><stop offset="1" stop-color="#f0a557"/>
+    </linearGradient>
+    <radialGradient id="sun" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#ffe7a8" stop-opacity=".95"/><stop offset=".45" stop-color="#ffc86a" stop-opacity=".45"/><stop offset="1" stop-color="#ffb43a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff6c8"/><stop offset=".25" stop-color="#ffd34d"/><stop offset=".6" stop-color="#ff8a2a"/><stop offset="1" stop-color="#ff3d1f" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="clip"><rect width="512" height="512" rx="112"/></clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect width="512" height="512" fill="url(#sky)"/>
+    <path d="M0 430 Q90 392 180 418 T360 410 T512 400 V512 H0 Z" fill="#20361a"/>
+    <path d="M0 462 Q120 436 250 456 T512 448 V512 H0 Z" fill="#14210f"/>
+    
+  <g transform="translate(256 256) scale(1.0) translate(-246 -262)">
+    <circle cx="262" cy="232" r="168" fill="url(#sun)"/>
+    <g opacity=".55" stroke="#fff" stroke-linecap="round">
+      <path d="M70 330 L150 290" stroke-width="9"/><path d="M95 380 L180 335" stroke-width="7"/><path d="M60 270 L120 240" stroke-width="6"/>
+    </g>
+    <g transform="rotate(-24 256 256)">
+      <!-- flames -->
+      <path d="M154 300 C146 360 160 425 170 486 C186 425 200 360 190 300 Z" fill="url(#flame)"/>
+      <path d="M190 300 C182 360 196 418 206 470 C222 418 236 360 226 300 Z" fill="url(#flame)"/>
+      <path d="M163 302 C160 345 168 385 172 420 C180 385 186 345 182 302 Z" fill="#fff" opacity=".85"/>
+      <path d="M199 302 C196 345 204 380 208 410 C216 380 222 345 218 302 Z" fill="#fff" opacity=".85"/>
+      <g stroke="#0b0f0a" stroke-width="10" stroke-linejoin="round">
+        <!-- legs (trailing) -->
+        <path d="M248 280 L200 322 L150 326" fill="none" stroke-width="44" stroke-linecap="round"/>
+        <path d="M282 288 L246 340 L200 362" fill="none" stroke-width="44" stroke-linecap="round"/>
+        <!-- jetpack -->
+        <rect x="140" y="160" width="84" height="138" rx="26" fill="#6b7680"/>
+        <rect x="150" y="290" width="30" height="24" rx="6" fill="#3a434b"/>
+        <rect x="188" y="290" width="30" height="24" rx="6" fill="#3a434b"/>
+        <!-- torso -->
+        <rect x="206" y="158" width="108" height="136" rx="38" fill="#3e5230"/>
+        <!-- helmet -->
+        <circle cx="266" cy="118" r="54" fill="#ffb43a"/>
+        <!-- rifle -->
+        <rect x="236" y="196" width="72" height="32" rx="9" fill="#20262b"/>
+        <rect x="296" y="200" width="150" height="20" rx="6" fill="#20262b"/>
+        <rect x="312" y="214" width="22" height="40" rx="5" fill="#20262b"/>
+        <!-- arm -->
+        <path d="M268 186 L330 216" fill="none" stroke-width="40" stroke-linecap="round"/>
+      </g>
+      <!-- inner colours over the outline strokes -->
+      <path d="M248 280 L200 322 L150 326" fill="none" stroke="#33442a" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M282 288 L246 340 L200 362" fill="none" stroke="#2c3a24" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="150" cy="326" r="19" fill="#15191c"/><circle cx="200" cy="362" r="19" fill="#15191c"/>
+      <rect x="152" y="176" width="20" height="104" rx="9" fill="#8a96a1" opacity=".7"/>
+      <rect x="214" y="200" width="98" height="18" rx="6" fill="#26321d"/>
+      <path d="M266 64 a54 54 0 0 1 54 52 l-108 0 a54 54 0 0 1 54 -52 z" fill="#ffd27a" opacity=".55"/>
+      <rect x="262" y="104" width="62" height="34" rx="15" fill="#132232" stroke="#0b0f0a" stroke-width="8"/>
+      <path d="M276 114 L312 114" stroke="#7fd8ff" stroke-width="7" stroke-linecap="round"/>
+      <path d="M268 186 L330 216" fill="none" stroke="#3e5230" stroke-width="26" stroke-linecap="round"/>
+      <circle cx="334" cy="218" r="17" fill="#1a1d20" stroke="#0b0f0a" stroke-width="7"/>
+      <rect x="300" y="204" width="140" height="6" rx="3" fill="#4a555e"/>
+      <!-- muzzle flash -->
+      <path d="M452 210 l34 -16 l-16 18 l30 4 l-30 8 l16 18 l-34 -14 z" fill="#ffe27a" stroke="#ff9a2a" stroke-width="4" stroke-linejoin="round"/>
+    </g>
+  </g>
+  </g>
+  <rect x="6" y="6" width="500" height="500" rx="108" fill="none" stroke="#ffb43a" stroke-width="12"/>
+</svg>

@@ -10,7 +10,8 @@
 <meta name="apple-mobile-web-app-title" content="Jetpack Brawl">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="icon" href="/icon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>Jetpack Brawl 3D</title>
 <style>
 :root{
@@ -29,7 +30,7 @@ button{font-family:inherit;color:inherit}
 #loader{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;text-align:center;
   background:radial-gradient(ellipse at 50% 35%,#2c3f26 0%,#141c12 60%,#0a0e09 100%);transition:opacity .5s}
 #loader.off{opacity:0;pointer-events:none}
-#loader .logo{width:clamp(70px,16vh,120px);height:auto}
+#loader .logo{width:clamp(78px,20vh,140px);height:auto;filter:drop-shadow(0 6px 14px #000a)}
 #loader h1{font:400 clamp(34px,8vh,64px)/1 var(--head);letter-spacing:4px;color:var(--acc);text-shadow:0 3px 0 #000a;text-transform:uppercase}
 #loader h1 small{display:block;font:700 clamp(12px,2.4vh,16px)/1.6 system-ui;letter-spacing:6px;color:var(--ink)}
 .bar0{width:min(78vw,460px);height:12px;border-radius:7px;background:#000a;border:1px solid var(--line);overflow:hidden}
@@ -250,7 +251,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 <body>
 
 <div id="loader">
-  <svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="12" fill="#1b2a17"/><path d="M22 14h20l4 10v14H18V24z" fill="#ffb43a"/><rect x="24" y="38" width="6" height="10" rx="2" fill="#d9d9d9"/><rect x="34" y="38" width="6" height="10" rx="2" fill="#d9d9d9"/><path d="M27 48l-3 10 6-6zM37 48l3 10-6-6z" fill="#ff7a1a"/></svg>
+  <img class="logo" src="/icon.svg" alt="" width="120" height="120">
   <h1>Jetpack Brawl<small>3D ARENA SHOOTER</small></h1>
   <div class="bar0"><div id="lbar"></div></div>
   <div id="lstatus">Loading…</div>
