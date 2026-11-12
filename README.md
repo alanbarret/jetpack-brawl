@@ -4,6 +4,7 @@ Multiplayer jetpack arena shooter: authoritative Node + WebSocket server, Three.
 
 ## Features
 - **Solo vs bots** (1-11 bots, Easy / Normal / Hard) and **online multiplayer** (public arena or private room codes, up to 12 players)
+- **Installable app (PWA)**: an *Install app* button in the main menu opens the browser's install prompt (with step-by-step help for iPhone, Samsung Internet and in-app browsers); a network-first service worker (`public/sw.js`) makes it installable on older browsers and lets the loading screen open offline
 - **Collision-aware camera**: the over-the-shoulder camera never clips into walls, rocks, tree canopies or your own character — it slides in when you back into something, rises over your head when squeezed, hides your model if it gets too close, and eases back out smoothly
 - **Character animations**: idle breathing and glance-around, run cycle with shoulder swing, strafe lean, dangling legs in the air, landing crouch, hit flinch, fall-over death, and a full magazine-swap reload (gun tilts, hand to belt pouch, new mag, charging-handle slap) for you and every other player. Extra gear: mag pouches, thigh holster, goggles, radio antenna
 - **In-game stats**: kills (vs the kill limit), deaths, suicides (own grenade/rocket/void — counted separately, kills are never taken away), K/D, live rank and kill streak under the timer; streak call-outs in the feed

@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "Jetpack Brawl 3D",
   "short_name": "Jetpack Brawl",
   "description": "Multiplayer jetpack arena shooter",
@@ -33,5 +34,12 @@
       "type": "image/svg+xml",
       "purpose": "any"
     }
+  ],
+  "display_override": [
+    "fullscreen",
+    "standalone"
+  ],
+  "categories": [
+    "games"
   ]
 }

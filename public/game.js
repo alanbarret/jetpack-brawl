@@ -1239,7 +1239,36 @@ function drawMapPreview(cv, map) {
     x.strokeStyle = 'rgba(0,0,0,.45)'; x.lineWidth = 1; x.strokeRect(rx + 0.5, rz + 0.5, rw, rd);
   }
 }
+// ---------- install as an app (PWA)
+let installEvt = null;
+const isInstalled = () => matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const inAppBrowser = /FBAN|FBAV|Instagram|Line\/|WhatsApp|Telegram|Snapchat|; wv\)/i.test(navigator.userAgent);
+if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; syncInstall(); });
+addEventListener('appinstalled', () => { installEvt = null; syncInstall(); toast('Installed! Open Jetpack Brawl from your home screen'); });
+function syncInstall() {
+  const b = $('installbtn'); if (!b) return;
+  b.style.display = isInstalled() ? 'none' : '';
+  $('installsub').textContent = installEvt ? 'Play full screen from your home screen' : 'Show me how';
+}
+async function doInstall() {
+  initAudio(); sfx('ui');
+  if (installEvt) {
+    installEvt.prompt();
+    const r = await installEvt.userChoice.catch(() => null);
+    if (r?.outcome === 'accepted') installEvt = null;
+    syncInstall(); return;
+  }
+  const how = $('installhow');
+  how.innerHTML = isIOS
+    ? 'On iPhone/iPad (Safari): tap <b>Share</b> <b>⬆︎</b> → <b>Add to Home Screen</b> → <b>Add</b>. Then open Jetpack Brawl from your home screen.'
+    : inAppBrowser
+      ? 'You opened the game inside another app. Tap <b>⋮</b> and choose <b>Open in Chrome</b> (or your browser), then use <b>Install app</b>.'
+      : 'Open your browser menu <b>⋮</b> and tap <b>Install app</b> or <b>Add to Home screen</b> → <b>Install</b>. In Samsung Internet, tap the <b>⬇︎ install</b> icon in the address bar.';
+  how.style.display = how.style.display === 'none' ? 'block' : 'none';
+}
 function initMenu() {
+  $('installbtn').onclick = doInstall; syncInstall();
   if (!MAPS[settings.map]) settings.map = 'outpost';
   const step = (d) => { settings.map = MAP_IDS[(MAP_IDS.indexOf(settings.map) + d + MAP_IDS.length) % MAP_IDS.length]; syncMap(); };
   function syncMap() {
