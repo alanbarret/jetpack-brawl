@@ -19,7 +19,7 @@ const btnW = (id, size) => (id === 'pickup' ? size * 2.5 : id === 'ntype' ? size
 // PUBG-style: big FIRE on the right (drag it to aim), small FIRE on the left above the move stick,
 // scope + reload around the right FIRE, JET bottom-right, grenade/melee bottom, weapon slots bottom-centre.
 const BASE = { ntype: 30, fire: 84, lfire: 68, jet: 76, nade: 54, melee: 54, reload: 54, pickup: 46, zoom: 54, board: 44, move: 124, aim: 124 };
-const LABEL = { ntype: 'FRAG ⟳', fire: 'FIRE', lfire: 'FIRE', jet: 'JET', nade: '💣', melee: '🔪', reload: 'R', pickup: 'PICK UP', zoom: '🔍', board: '☰', move: 'MOVE', aim: 'AIM' };
+const LABEL = { ntype: 'NADE TYPE', fire: 'FIRE', lfire: 'LEFT FIRE', jet: 'JETPACK', nade: 'GRENADE', melee: 'MELEE', reload: 'RELOAD', pickup: 'PICK UP', zoom: 'SCOPE', board: 'SCORES', move: 'MOVE', aim: 'AIM' };
 export const PRESETS = {
   classic: {
     fire: [0.86, 0.5, 1], lfire: [0.09, 0.46, 1], zoom: [0.955, 0.36, 1], reload: [0.75, 0.36, 1],
@@ -357,7 +357,11 @@ export function openEditor() {
   for (const id of IDS) {
     const d = document.createElement('div');
     d.className = 'eitem' + (id === 'move' || id === 'aim' ? ' stick' : '') + (BASE[id] > 60 ? ' big' : '');
-    d.dataset.id = id; d.textContent = LABEL[id];
+    d.dataset.id = id;
+    const src = document.querySelector(`#touch [data-id="${id}"]`);
+    if (id === 'jet' && src) d.innerHTML = src.querySelector('.jico')?.outerHTML || LABEL[id];
+    else if (src) d.innerHTML = src.innerHTML.replace(' id="ntlbl"', '');
+    else d.textContent = LABEL[id];
     d.addEventListener('pointerdown', (e) => {
       e.preventDefault(); d.setPointerCapture(e.pointerId); $('ctledit').querySelector('.edhint').style.display = 'none';
       const p = place(id, ed.l); ed.drag = { id, dx: e.clientX - p.x, dy: e.clientY - p.y };
@@ -394,7 +398,7 @@ function drawEditor() {
     d.classList.toggle('pill', id === 'pickup'); d.classList.toggle('chip', id === 'ntype');
     const w = btnW(id, p.size);
     Object.assign(d.style, { left: p.x - w / 2 + 'px', top: p.y - p.size / 2 + 'px', width: w + 'px', height: p.size + 'px',
-      fontSize: Math.round(p.size * (BASE[id] > 60 ? 0.2 : 0.32)) + 'px', opacity: id === 'move' || id === 'aim' ? 1 : ed.opa });
+      fontSize: Math.round(p.size * (id === 'pickup' ? 0.3 : id === 'ntype' ? 0.4 : BASE[id] > 60 ? 0.21 : 0.33)) + 'px', opacity: id === 'move' || id === 'aim' ? 1 : ed.opa });
     d.classList.toggle('sel', id === ed.sel); d.classList.toggle('off', hidden);
   }
 }

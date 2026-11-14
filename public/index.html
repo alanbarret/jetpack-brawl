@@ -182,27 +182,37 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 
 /* ---------- touch controls ---------- */
 #touch{display:none;--topa:.8}
-.tbtn{position:fixed;border-radius:50%;background:rgba(255,255,255,.2);border:2px solid rgba(255,255,255,.75);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;text-shadow:0 1px 3px #000;pointer-events:auto;z-index:10;opacity:var(--topa);transition:transform .07s,background .07s;user-select:none;-webkit-user-select:none;touch-action:none}
-.tbtn.down{background:rgba(255,180,58,.7);border-color:#ffd88a;transform:scale(.9)}
+.tbtn{position:fixed;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.26),rgba(14,20,13,.68));border:2px solid rgba(255,255,255,.78);box-shadow:0 3px 10px rgba(0,0,0,.45),inset 0 1px 1px rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;gap:5px;font-weight:800;color:#fff;text-shadow:0 1px 3px #000;pointer-events:auto;z-index:10;opacity:var(--topa);transition:transform .07s,background .07s,border-color .07s;user-select:none;-webkit-user-select:none;touch-action:none}
+.tbtn svg,.eitem svg{width:56%;height:56%;display:block;pointer-events:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,.65));flex:none}
+.tbtn[data-id=fire] svg,.tbtn[data-id=lfire] svg,.eitem[data-id=fire] svg,.eitem[data-id=lfire] svg{width:58%;height:58%}
+.tbtn[data-id=jet] .jico,.eitem[data-id=jet] .jico{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;gap:1px;pointer-events:none}
+.tbtn[data-id=jet] .jico svg,.eitem[data-id=jet] .jico svg{width:50%;height:50%}
+.tbtn[data-id=jet] .jico b,.eitem[data-id=jet] .jico b{font-size:.52em;letter-spacing:1.2px;line-height:1}
+.tbtn.down{background:radial-gradient(circle at 35% 30%,rgba(255,205,110,.88),rgba(215,120,15,.78));border-color:#ffe3a3;transform:scale(.9)}
 .tbtn .ring{position:absolute;inset:-8px;border-radius:50%;pointer-events:none;background:conic-gradient(var(--fc,#4cc8ff) calc(var(--f,1)*360deg),rgba(255,255,255,.18) 0);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 6px),#000 calc(100% - 5px));mask:radial-gradient(farthest-side,transparent calc(100% - 6px),#000 calc(100% - 5px))}
 .tbtn .lev{position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px;border-radius:50%;background:#fff;box-shadow:0 0 6px #000;opacity:0;pointer-events:none}
-.tbtn.lever .lev{opacity:.95}.tbtn.lever span{opacity:.35}
-.tbtn.dive{background:rgba(255,90,74,.7);border-color:#ffb0a6}.tbtn.dive span:after{content:' ▼'}
-.joy{position:fixed;transform:translate(-50%,-50%);border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.55);display:none;pointer-events:none;opacity:var(--topa)}
-.joy .knob{position:absolute;left:50%;top:50%;width:42%;height:42%;transform:translate(-50%,-50%);border-radius:50%;background:rgba(255,255,255,.65);box-shadow:0 0 8px rgba(0,0,0,.4)}
+.tbtn.lever .lev{opacity:.95}.tbtn.lever .jico{opacity:.35}
+.tbtn.dive{background:radial-gradient(circle at 35% 30%,rgba(255,110,94,.85),rgba(170,35,25,.8));border-color:#ffb0a6}.tbtn.dive .jico b:after{content:' ▼'}
+.joy{position:fixed;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.06) 40%,rgba(255,255,255,.18) 100%);border:2px solid rgba(255,255,255,.55);box-shadow:inset 0 0 14px rgba(0,0,0,.35);display:none;pointer-events:none;opacity:var(--topa)}
+.joy:before{content:'';position:absolute;inset:14%;border-radius:50%;border:1px dashed rgba(255,255,255,.25)}
+.joy .knob{position:absolute;left:50%;top:50%;width:42%;height:42%;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.9),rgba(190,205,185,.68));border:1.5px solid rgba(255,255,255,.9);box-shadow:0 2px 8px rgba(0,0,0,.5),inset 0 0 0 4px rgba(0,0,0,.12)}
 .joy.fixed:not(.act){opacity:calc(var(--topa)*.6)}
-.joy .lockhint{position:absolute;left:50%;top:-58%;transform:translateX(-50%);font-style:normal;font-size:12px;font-weight:800;white-space:nowrap;color:#fff;background:rgba(10,14,9,.75);border:1.5px solid rgba(255,255,255,.55);border-radius:12px;padding:3px 9px;display:none}
-.joy.act .lockhint{display:block}.joy.lockarm .lockhint{background:var(--acc);color:var(--accd);border-color:#ffd88a}
+.joy .lockhint{position:absolute;left:50%;top:-58%;transform:translateX(-50%);font-style:normal;font-size:12px;font-weight:800;white-space:nowrap;color:#fff;background:rgba(10,14,9,.75);border:1.5px solid rgba(255,255,255,.55);border-radius:12px;padding:3px 9px;display:none;align-items:center;gap:4px}
+.joy .lockhint svg,#runlock svg{width:14px;height:14px;vertical-align:-2px;fill:currentColor}
+.joy.act .lockhint{display:inline-flex}.joy.lockarm .lockhint{background:var(--acc);color:var(--accd);border-color:#ffd88a}
 #runlock{position:fixed;left:calc(16px + var(--sal));bottom:calc(14px + var(--sab));display:none;background:var(--acc);color:var(--accd);font-weight:800;font-size:12px;letter-spacing:.5px;padding:6px 11px;border-radius:14px;pointer-events:none;z-index:11}
-.tbtn.pill,.eitem.pill{border-radius:22px;background:rgba(255,180,58,.85);border-color:#ffd88a;color:#2a1a00;text-shadow:none;letter-spacing:.5px}
-.tbtn.chip,.eitem.chip{border-radius:14px;background:rgba(10,14,9,.78);border:1.5px solid #ffd88a;color:#ffd88a;font-weight:800;letter-spacing:.5px;white-space:nowrap}
+.tbtn.pill,.eitem.pill{border-radius:22px;background:rgba(255,180,58,.88);border-color:#ffd88a;color:#2a1a00;text-shadow:none;letter-spacing:.5px;padding:0 10px}
+.tbtn.pill svg,.eitem.pill svg{width:1.25em;height:1.25em;filter:none}
+.tbtn.chip,.eitem.chip{border-radius:14px;background:rgba(10,14,9,.82);border:1.5px solid #ffd88a;color:#ffd88a;font-weight:800;letter-spacing:.5px;white-space:nowrap;padding:0 8px}
+.tbtn.chip svg,.eitem.chip svg{width:1.05em;height:1.05em;filter:none}
 #touch.deadctl .tbtn,#touch.deadctl .joy{display:none!important}
 #nades{display:flex;gap:5px}
 .ng{background:#000a;padding:3px 7px;border-radius:5px;font-size:11px;font-weight:800;letter-spacing:.5px;color:var(--ink2)}
 .ng.on{color:var(--ink);outline:2px solid var(--acc)}
-.tbtn[data-id=fire]{background:rgba(255,90,74,.32);border-color:rgba(255,160,150,.9)}
-.tbtn[data-id=lfire]{background:rgba(255,90,74,.28);border-color:rgba(255,160,150,.85)}
-.joy.aim{border-color:rgba(255,200,110,.8)}.joy.aim .knob{background:rgba(255,190,90,.85)}
+.tbtn[data-id=fire],.eitem[data-id=fire]{background:radial-gradient(circle at 35% 30%,rgba(255,115,95,.52),rgba(140,25,18,.58));border-color:rgba(255,170,158,.92)}
+.tbtn[data-id=lfire],.eitem[data-id=lfire]{background:radial-gradient(circle at 35% 30%,rgba(255,115,95,.46),rgba(140,25,18,.52));border-color:rgba(255,170,158,.86)}
+.tbtn[data-id=jet],.eitem[data-id=jet]{background:radial-gradient(circle at 35% 30%,rgba(90,205,255,.38),rgba(15,65,95,.62));border-color:rgba(150,225,255,.9)}
+.joy.aim{border-color:rgba(255,200,110,.8)}.joy.aim .knob{background:radial-gradient(circle at 35% 30%,rgba(255,220,140,.95),rgba(235,155,45,.8));border-color:#ffe09a}
 .joy.aim.firing{border-color:#ff7a6a}.joy.aim.firing .knob{background:#ff5a4a}
 #wheel{position:fixed;width:208px;height:208px;margin:-104px 0 0 -104px;border-radius:50%;background:rgba(10,14,9,.9);border:2px solid #ffd88a;display:none;z-index:30;pointer-events:none}
 #wheel .ws{position:absolute;width:92px;padding:6px 4px;text-align:center;font-weight:800;font-size:12px;letter-spacing:.5px;color:#fff;border-radius:7px;border:1px solid transparent}
@@ -214,7 +224,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 #wheel .wc{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:22px;color:#ffd88a}
 #ctledit{position:fixed;inset:0;z-index:60;display:none;background-color:#0d130b;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:40px 40px;touch-action:none}
 #edarea{position:absolute;inset:0}
-.eitem{position:absolute;border-radius:50%;background:rgba(255,255,255,.2);border:2px solid rgba(255,255,255,.8);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;text-shadow:0 1px 3px #000;cursor:grab;user-select:none;touch-action:none}
+.eitem{position:absolute;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.26),rgba(14,20,13,.68));border:2px solid rgba(255,255,255,.8);display:flex;align-items:center;justify-content:center;gap:5px;font-weight:800;color:#fff;text-shadow:0 1px 3px #000;cursor:grab;user-select:none;touch-action:none}
 .eitem.stick{border-style:dashed;background:rgba(255,255,255,.07);font-size:12px!important;letter-spacing:2px}
 .eitem.sel{border-color:var(--acc);box-shadow:0 0 0 3px rgba(255,180,58,.55)}
 .eitem.off{display:none}
@@ -320,7 +330,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
       <b>Jump</b><span>Hold <u>JET</u> to climb. Jump off a high ledge and the jetpack <u>slows your fall</u> automatically</span>
       <b>Jet</b><span>Hold to climb · hold <b style="color:inherit">descend</b> to drop</span>
       <b>PC</b><span>WASD move · Space jet · C descend · Shift sprint · Mouse aim/fire · Right-click zoom · R reload · Q swap · G throw grenade · T change grenade type · F melee · E take weapon · Tab scores</span>
-      <b>Phone</b><span>PUBG style: left stick moves (slide far up to lock running) · drag the right side to look · big FIRE on the right (drag it to aim) or small FIRE on the left · tap the weapon slots to switch · 🔍 scope · grenade chip switches Frag / Gas / Proxy · R reload · JET (swipe down = dive) · 💣 hold for arc · PICK UP appears next to weapons</span>
+      <b>Phone</b><span>PUBG style: left stick moves (slide far up to lock running) · drag the right side to look · big FIRE on the right (drag it to aim) or small FIRE on the left · tap the weapon slots to switch · scope button · grenade chip switches Frag / Gas / Proxy · reload button · JET (swipe down = dive) · hold grenade for arc · PICK UP appears next to weapons</span>
     </div>
     <button class="mbtn ghost" data-go="main">← Back</button>
   </div>
@@ -374,7 +384,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
   <div id="dead"><div id="deadt"></div></div>
   <div id="board"><table id="boardt"></table><div id="boardr"></div></div>
   <div id="end"><div id="endw"></div><table id="endl"></table><div id="endt" style="font-size:14px;margin-top:12px;color:var(--ink2)"></div></div>
-  <button class="ibtn" id="pausebtn">⏸</button>
+  <button class="ibtn" id="pausebtn" aria-label="Pause"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1.2"/><rect x="14" y="4" width="4" height="16" rx="1.2"/></svg></button>
 </div>
 
 <div id="pause">
@@ -389,19 +399,19 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 </div>
 
 <div id="touch">
-  <div id="mjoy" class="joy"><i class="lockhint">🔒 RUN</i><div class="knob"></div></div>
-  <div id="runlock">🔒 AUTO-RUN · tap left side to stop</div>
+  <div id="mjoy" class="joy"><i class="lockhint"><svg viewBox="0 0 24 24"><path d="M12 2l5 5-1.4 1.4L13 5.8V14h-2V5.8L8.4 8.4 7 7l5-5zm-6 14h12v6H6v-6z"/></svg>RUN</i><div class="knob"></div></div>
+  <div id="runlock"><svg viewBox="0 0 24 24"><path d="M12 2l5 5-1.4 1.4L13 5.8V14h-2V5.8L8.4 8.4 7 7l5-5zm-6 14h12v6H6v-6z"/></svg> AUTO-RUN · tap left side to stop</div>
   <div id="ajoy" class="joy aim"><div class="knob"></div></div>
-  <div class="tbtn" data-id="fire">FIRE</div>
-  <div class="tbtn" data-id="lfire">FIRE</div>
-  <div class="tbtn" data-id="jet"><div class="ring"></div><div class="lev"></div><span>JET</span></div>
-  <div class="tbtn" data-id="nade">💣</div>
-  <div class="tbtn chip" data-id="ntype">FRAG ⟳</div>
-  <div class="tbtn" data-id="melee">🔪</div>
-  <div class="tbtn" data-id="reload">R</div>
-  <div class="tbtn pill" data-id="pickup">✋ PICK UP</div>
-  <div class="tbtn" data-id="zoom">🔍</div>
-  <div class="tbtn" data-id="board">☰</div>
+  <div class="tbtn" data-id="fire" aria-label="Fire"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path fill="currentColor" stroke="none" d="M22.8 5.2c1.6 1.6.9 4.9-1.6 7.4l-6.7 6.7-4.8-4.8 6.7-6.7c2.5-2.5 5.8-3.2 7.4-1.6zM9.7 15.9l4.4 4.4-3.6 3.6c-.5.5-1.3.5-1.8 0l-2.6-2.6c-.5-.5-.5-1.3 0-1.8l3.6-3.6zM4.6 23.2l2.2 2.2-1.3 1.3a1 1 0 0 1-1.4-1.4l.5-.5z"/><path d="M24.5 3.5l3-1.5M28.5 7.5l1.5-3M26 6l2.5-2.5M6 11a11 11 0 0 1 9-5M21 26a11 11 0 0 1-9-5"/></svg></div>
+  <div class="tbtn" data-id="lfire" aria-label="Fire"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path fill="currentColor" stroke="none" d="M22.8 5.2c1.6 1.6.9 4.9-1.6 7.4l-6.7 6.7-4.8-4.8 6.7-6.7c2.5-2.5 5.8-3.2 7.4-1.6zM9.7 15.9l4.4 4.4-3.6 3.6c-.5.5-1.3.5-1.8 0l-2.6-2.6c-.5-.5-.5-1.3 0-1.8l3.6-3.6zM4.6 23.2l2.2 2.2-1.3 1.3a1 1 0 0 1-1.4-1.4l.5-.5z"/><path d="M24.5 3.5l3-1.5M28.5 7.5l1.5-3M26 6l2.5-2.5M6 11a11 11 0 0 1 9-5M21 26a11 11 0 0 1-9-5"/></svg></div>
+  <div class="tbtn" data-id="jet" aria-label="Jetpack"><div class="ring"></div><div class="lev"></div><span class="jico"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M9 4a3 3 0 0 1 3 3v9H6V7a3 3 0 0 1 3-3zm14 0a3 3 0 0 1 3 3v9h-6V7a3 3 0 0 1 3-3zM12 7h8v5h-8V7zm-5 10h4l1 3H6l1-3zm14 0h4l1 3h-6l1-3z"/><path opacity=".9" d="M9 21c1.8 2.2 2.2 4.8 0 8-2.2-3.2-1.8-5.8 0-8zm14 0c1.8 2.2 2.2 4.8 0 8-2.2-3.2-1.8-5.8 0-8zm-7-1c1.4 1.8 1.7 3.8 0 6.2-1.7-2.4-1.4-4.4 0-6.2z"/></svg><b>JET</b></span></div>
+  <div class="tbtn" data-id="nade" aria-label="Grenade"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="5" width="6" height="3.5" rx="1" fill="currentColor"/><path d="M19 6.5h4.5l2 5.5-1.5 6" stroke-width="2.2"/><circle cx="10.5" cy="6.5" r="2.5"/><path fill="currentColor" stroke="none" d="M16 9.5c-5 0-8.5 3.8-8.5 9s3.5 9 8.5 9 8.5-3.8 8.5-9-3.5-9-8.5-9zm-4.8 4.2h3.8v3.6h-4.6c.1-1.3.4-2.5.8-3.6zm0 9.6c-.4-1.1-.7-2.3-.8-3.6h4.6v3.6h-3.8zm9.6 0h-3.8v-3.6h4.6c-.1 1.3-.4 2.5-.8 3.6zm.8-6h-4.6v-3.6h3.8c.4 1.1.7 2.3.8 3.6z"/></svg></div>
+  <div class="tbtn chip" data-id="ntype" aria-label="Switch grenade"><span id="ntlbl">FRAG</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
+  <div class="tbtn" data-id="melee" aria-label="Melee"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M26.8 4.2c.5 3.8-1.1 8.2-4.6 11.7l-4.3 4.3-4.1-4.1 7.2-7.2c1.9-1.9 3.8-3.5 5.8-4.7zM11.2 14.9l5.9 5.9-1.6 1.6-5.9-5.9 1.6-1.6zm-.5 3.7l3.7 3.7-4.6 4.6a2 2 0 0 1-2.8 0l-.9-.9a2 2 0 0 1 0-2.8l4.6-4.6z"/></svg></div>
+  <div class="tbtn" data-id="reload" aria-label="Reload"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M25.5 13A10 10 0 1 0 24 22.5"/><path fill="currentColor" stroke="none" d="M27.5 7.5v7.5H20l7.5-7.5zM13.5 11.5c0-1.4 1-2.8 1.5-3.3.5.5 1.5 1.9 1.5 3.3V21h-3v-9.5zm4.5 1.5c0-1.4 1-2.8 1.5-3.3.5.5 1.5 1.9 1.5 3.3V21h-3v-8z"/></svg></div>
+  <div class="tbtn pill" data-id="pickup" aria-label="Pick up weapon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10m0-10l-4 4m4-4l4 4"/><path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/></svg><span>PICK UP</span></div>
+  <div class="tbtn" data-id="zoom" aria-label="Scope"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="16" cy="16" r="10.5"/><path d="M16 2.5v6M16 23.5v6M2.5 16h6M23.5 16h6"/><circle cx="16" cy="16" r="1.8" fill="currentColor" stroke="none"/></svg></div>
+  <div class="tbtn" data-id="board" aria-label="Scoreboard"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M13 11h6v15h-6V11zm-7 6h5v9H6v-9zm15-3h5v12h-5V14zm-5-9l1.4 2.6 2.9.5-2.1 2 .5 2.9-2.7-1.4-2.7 1.4.5-2.9-2.1-2 2.9-.5L16 5z"/></svg></div>
 </div>
 <div id="wheel"><div class="ws" data-k="w0"></div><div class="ws" data-k="pickup">PICK UP</div><div class="ws" data-k="w1"></div><div class="ws" data-k="reload">RELOAD</div><div class="wc">⇄</div></div>
 

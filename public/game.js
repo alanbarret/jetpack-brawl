@@ -1069,8 +1069,8 @@ function updateHUD(dt) {
   }
   const gn = me.gn || {}, gs = me.gs || 'frag';
   setHTML($('nades'), NADE_TYPES.map((k) => `<span class="ng ${k === gs ? 'on' : ''}">${NADES[k].short} ${gn[k] || 0}</span>`).join(''));
-  const nt = document.querySelector('#touch [data-id=ntype]');
-  if (nt) setHTML(nt, `${NADES[gs].short} ×${gn[gs] || 0} ⟳`);
+  const nt = $('ntlbl');
+  if (nt) setHTML(nt, `${NADES[gs].short} ×${gn[gs] || 0}`);
   const dead = !me.alive || state !== 'playing';            // dead, or the match has ended
   if (dead !== wasDead) { wasDead = dead; $('touch').classList.toggle('deadctl', dead); if (dead) { resetTouch(); zoom = false; } }
   const tl = Math.max(0, timeLeft - (tn - timeLeftAt));
