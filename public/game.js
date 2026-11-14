@@ -44,8 +44,20 @@ let yaw = 0, pitch = 0, aimYaw = 0, aimPitch = 0, aimTarget = [0, 0, -10];
 let seq = 0; const pending = [];
 let zoom = false, mouseDown = false, chatOpen = false, boardOpen = false, paused = false, lastWheel = 0;
 let shake = 0, hitT = 0, dmgT = 0, dmgDirT = 0, dmgAngle = 0, localNextFire = 0;
+const slotNextFire = [0, 0];
 const keys = {}; const touch = { mx: 0, mz: 0, fire: false, sfire: false, jet: 0, down: false, sp: false, nade: false, aiming: false };
 let inLobby = false, lobbyState = null, privRoom = false, lastWid = null, myDeathT = -1e9;
+function clearMatchVisuals() {
+  for (const m of pickMeshes.values()) scene.remove(m); pickMeshes.clear();
+  for (const m of projMeshes.values()) scene.remove(m); projMeshes.clear();
+  for (let i = fx.length - 1; i >= 0; i--) { const f = fx[i]; scene.remove(f.o); f.o.geometry.dispose(); f.o.material.dispose(); } fx.length = 0;
+  for (let i = clouds.length - 1; i >= 0; i--) { const c = clouds[i]; scene.remove(c.g); for (const m of c.g.children) m.geometry.dispose(); c.mat.dispose(); } clouds.length = 0;
+  if (arcLine) arcLine.visible = false;
+  if (arcRing) arcRing.visible = false;
+  hitT = dmgT = dmgDirT = 0;
+  for (const id of ['scope', 'dead', 'prot']) if ($(id)) $(id).style.display = 'none';
+  for (const id of ['vig', 'ddir', 'hitm']) if ($(id)) $(id).style.opacity = 0;
+}
 // ---------- match view / lobby view
 function enterMatchView() {
   inLobby = false; inMenu = false;
@@ -58,7 +70,8 @@ function enterMatchView() {
   if (!isTouch) { lockPointer(); setTimeout(() => { if (connected && !inLobby && document.pointerLockElement !== cv && !chatOpen) setPause(true); }, 600); }
 }
 function showLobby() {
-  inLobby = true; inMenu = true; me = null; paused = false;
+  inLobby = true; inMenu = true; me = null; paused = false; zoom = false;
+  clearMatchVisuals();
   for (const id of ['hud', 'touch', 'pause', 'end', 'board']) $(id).style.display = 'none';
   for (const r of remotes.values()) r.mesh.visible = false;
   if (myMesh) myMesh.visible = false;
@@ -543,7 +556,10 @@ document.addEventListener('visibilitychange', async () => { if (!document.hidden
 
 // ---------- networking
 const send = (o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
-const sendAct = (a) => send({ type: 'a', a });
+const sendAct = (a) => {
+  if (a === 'swap' && me?.w?.[1 - me.slot]) localNextFire = Math.max(slotNextFire[1 - me.slot] || 0, performance.now() + 250);
+  send({ type: 'a', a });
+};
 const showConn = (msg) => { $('connmsg').textContent = msg; $('conn').style.display = 'flex'; };
 const hideConn = () => { $('conn').style.display = 'none'; };
 function showStatus(msg) { hideConn(); $('statusmsg').textContent = msg; $('status').style.display = 'flex'; document.exitPointerLock?.(); }
@@ -635,7 +651,14 @@ function onSnapshot(s) {
     const err = sub(old, local.pos);
     if (!wasAlive || len(err) > 4) { renderOffset = [0, 0, 0]; prevPos = [...local.pos]; }
     else { renderOffset = add(renderOffset, err); prevPos = sub(prevPos, err); }
-  } else { pending.length = 0; local.pos = [...me.pos]; local.thrusting = false; prevPos = [...me.pos]; renderOffset = [0, 0, 0]; }
+  } else {
+    const old = [...local.pos];
+    pending.length = 0;
+    Object.assign(local, { pos: [...me.pos], vel: [...me.vel], onGround: me.og, thrusting: false });
+    const err = sub(old, local.pos);
+    if (wasAlive || len(err) > 4) { renderOffset = [0, 0, 0]; prevPos = [...local.pos]; }
+    else { renderOffset = add(renderOffset, err); prevPos = sub(prevPos, err); }
+  }
 
   // --- remote players (buffered for interpolation)
   const seen = new Set();
@@ -704,7 +727,7 @@ function handleEvent(e) {
     case 'streak': {
       const word = { 3: 'is on a KILLING SPREE', 5: 'is UNSTOPPABLE', 8: 'is GODLIKE', 12: 'is LEGENDARY' }[e.s] || `has ${e.s} kills in a row`;
       addFeed(`🔥 <b style="color:${e.c}">${esc(e.n)}</b> <i>${word} (${e.s})</i>`);
-      if (e.n === settings.name) { toast(`🔥 ${e.s} KILL STREAK!`); sfx('ui'); }
+      if (e.id ? e.id === myId : e.n === settings.name) { toast(`🔥 ${e.s} KILL STREAK!`); sfx('ui'); }
       break;
     }
     case 'msg': addFeed(`<i>${esc(e.text)}</i>`); break;
@@ -718,7 +741,7 @@ function handlePriv(e) {
   else if (e.e === 'dmg') {
     dmgT = 0.5; sfx('hurt'); buzz('dmg'); if (myMesh) hitFlinch(myMesh);
     if (e.from) { const dx = e.from[0] - local.pos[0], dz = e.from[1] - local.pos[2]; if (dx || dz) { dmgAngle = Math.atan2(-dx, -dz); dmgDirT = 1.2; } }
-  } else if (e.e === 'spawn') { yaw = e.yaw; pitch = 0; }
+  } else if (e.e === 'spawn') { yaw = e.yaw; pitch = 0; localNextFire = 0; slotNextFire[0] = slotNextFire[1] = 0; }
   else if (e.e === 'pick') {
     toast(e.type === 'weapon' ? `+ ${WEAPONS[e.w].name}` : e.type === 'health' ? '+50 Health' : e.type === 'shield' ? '+50 Shield' : `+2 ${NADES[e.w]?.name || ''} grenades`);
     sfx('pick');
@@ -748,7 +771,7 @@ function camBlocks(map) {
 }
 function camRay(o, d, maxT) {
   let t = rayWorld(o, d, maxT, MAPC);
-  for (const b of camBlocks(MAPC)) { const tt = rayBox(o, d, b.min, b.max); if (tt < t) t = tt; }
+  for (const b of camBlocks(MAPC)) { if (inBox(o, b)) continue; const tt = rayBox(o, d, b.min, b.max); if (tt < t) t = tt; }
   return t;
 }
 function cameraRig(pos, smooth = false, dt = 0) {
@@ -779,16 +802,32 @@ function cameraRig(pos, smooth = false, dt = 0) {
 }
 function computeAim() {
   // shoot along the line through the camera the player actually sees (incl. smoothing / lift)
-  const rig = lastCam ? { eye: [local.pos[0], local.pos[1] + CFG.EYE, local.pos[2]], cam: lastCam, fwd: aimDir(yaw, pitch) } : cameraRig(local.pos);
-  let t = rayWorld(rig.cam, rig.fwd, 300, MAPC), onR = null;
+  const scopedSniper = zoom && curWeapon() === 'sniper';
+  const eye = [local.pos[0], local.pos[1] + CFG.EYE, local.pos[2]], fwd = aimDir(yaw, pitch);
+  const rig = scopedSniper ? { eye, cam: eye, fwd } : lastCam ? { eye, cam: lastCam, fwd } : cameraRig(local.pos);
+  const toEye = sub(rig.eye, rig.cam), minT = Math.max(0, toEye[0] * rig.fwd[0] + toEye[1] * rig.fwd[1] + toEye[2] * rig.fwd[2]);
+  const start = add(rig.cam, mul(rig.fwd, minT));
+  const worldT = minT + rayWorld(start, rig.fwd, 300, MAPC);
+  let t = worldT, onR = null, hitHb = null;
   for (const r of remotes.values()) {
     if (!r.alive || !r.rp) continue;
-    for (const hb of hitboxes(r.rp)) { const tt = rayBox(rig.cam, rig.fwd, hb.min, hb.max); if (tt < t) { t = tt; onR = r; } }
+    const [bodyHb, headHb] = hitboxes(r.rp);
+    const tHead = rayBox(rig.cam, rig.fwd, headHb.min, headHb.max);
+    const tBody = rayBox(rig.cam, rig.fwd, bodyHb.min, bodyHb.max);
+    const tt = tHead >= minT && tHead < worldT ? tHead : tBody;
+    const hb = tHead >= minT && tHead < worldT ? headHb : bodyHb;
+    if (tt >= minT && tt < t) { t = tt; onR = r; hitHb = hb; }
   }
   if (onR !== aimEnemy) { aimEnemy = onR; aimEnemySince = performance.now(); }
-  aimTarget = add(rig.cam, mul(rig.fwd, t));
+  if (hitHb) {
+    const p = add(rig.cam, mul(rig.fwd, t + 0.14));
+    aimTarget = [clamp(p[0], hitHb.min[0] + 0.04, hitHb.max[0] - 0.04), clamp(p[1], hitHb.min[1] + 0.04, hitHb.max[1] - 0.04), clamp(p[2], hitHb.min[2] + 0.04, hitHb.max[2] - 0.04)];
+  } else {
+    aimTarget = add(rig.cam, mul(rig.fwd, Math.max(t, minT + 1.5)));
+  }
+  if (scopedSniper) return [yaw, pitch];
   const d = sub(aimTarget, rig.eye), L = len(d);
-  if (L < 1.5) return [yaw, pitch];
+  if (L < 0.5) return [yaw, pitch];
   return [Math.atan2(-d[0], -d[2]), Math.asin(clamp(d[1] / L, -1, 1))];
 }
 
@@ -854,6 +893,8 @@ function fixedStep() {
     stepPlayer(local, mv, CFG.INPUT_DT, MAPC);           // client-side prediction
     pending.push({ seq: inp.seq, mv });
     if (pending.length > 180) pending.shift();
+  } else if (!me.alive && state === 'playing' && local.pos[1] > -30) {
+    stepPlayer(local, { mx: 0, mz: 0, yaw: inp.yaw, jump: false, jet: 0, sprint: false, down: true }, CFG.INPUT_DT, MAPC);
   }
   send({ type: 'i', ...inp });
   if (inp.f) predictShot();
@@ -863,7 +904,7 @@ function predictShot() {   // instant local feedback; the server decides real hi
   if (!w || !me.alive || state !== 'playing') return;
   const W = WEAPONS[w.id], tn = performance.now();
   if (tn < localNextFire || tn < reloadEnd || w.mag <= 0) return;
-  localNextFire = tn + 1000 / W.rate; w.mag--; lastShotT = tn;
+  slotNextFire[me.slot] = localNextFire = tn + 1000 / W.rate; w.mag--; lastShotT = tn;
   sfx(W.pellets || W.scope || W.projectile ? 'heavy' : 'shot');
   if (myMesh) { kickRecoil(myMesh); flashMuzzle(myMesh); }
   if (W.projectile) return;
@@ -1070,13 +1111,16 @@ function frame() {
 const SHOW_WEAPONS = ['ar', 'smg', 'shotgun', 'sniper', 'rocket', 'pistol'];
 let showIdx = 0, showNext = 0;
 function renderMenuScene(dt, tn) {
+  updateFx(dt); updateClouds(dt, tn);
+  const gy = Math.max(0, 40 - rayWorld([0, 40, 0], [0, -1, 0], 40, MAPC));
   if (showcase && inMenu) {
     showcase.visible = true;
+    showcase.position.set(0, gy, 0);
     if (tn > showNext) { showNext = tn + 3200; const id = SHOW_WEAPONS[showIdx++ % SHOW_WEAPONS.length]; setWeapon(showcase, id); $('wlabel').textContent = WEAPONS[id].name; }
     showcase.rotation.y = 1.0 + Math.sin(tn * 0.0007) * 0.15;   // 3/4 view, facing the menu
     animateSoldier(showcase, { dt, t: tn, vx: 0, vz: 0, yaw: 0, pitch: 0.04, onGround: true, thrusting: false });
   }
-  const C = new THREE.Vector3(0, 14.05, 0);
+  const C = new THREE.Vector3(0, gy + 1.05, 0);
   const ang = Math.sin(tn * 0.0004) * 0.45;
   const cp = new THREE.Vector3(C.x + Math.sin(ang) * 4.6, C.y + 0.5, C.z - Math.cos(ang) * 4.6);
   const fwd = C.clone().sub(cp).setY(0).normalize();
@@ -1167,7 +1211,7 @@ function updateNadeArc() {
   if (!show) return;
   const ty = (me.gn[gs] || 0) > 0 ? gs : NADE_TYPES.find((k) => me.gn[k] > 0), N = NADES[ty];
   if (ty !== arcType) { arcType = ty; arcRing.scale.setScalar(ty === 'prox' ? N.trig : N.r); arcRing.material.color.set(ty === 'gas' ? '#a6d65a' : ty === 'prox' ? '#ff3a3a' : '#ff6a3a'); }
-  const n = nadeLaunch(local.pos, local.vel, aimYaw, aimPitch, ty), h = 1 / 60;
+  const n = nadeLaunch(local.pos, local.vel, aimYaw, aimPitch, ty, MAPC), h = 1 / 60;
   const life = ty === 'prox' ? 3 : N.fuse / 1000, steps = Math.min(ARC_N, Math.round(life * 60));
   const arr = arcLine.geometry.attributes.position.array;
   let k = 0;
@@ -1190,8 +1234,7 @@ function leaveMatch() {
   if (ws) { ws.onclose = null; try { ws.close(); } catch {} ws = null; }
   for (const r of remotes.values()) scene.remove(r.mesh);
   remotes.clear();
-  for (const m of pickMeshes.values()) scene.remove(m); pickMeshes.clear();
-  for (const m of projMeshes.values()) scene.remove(m); projMeshes.clear();
+  clearMatchVisuals();
   if (myMesh) { scene.remove(myMesh); myMesh = null; }
   roster.clear(); pending.length = 0; seq = 0; synced = false;
   MAPC = MAP; loadMapVisuals(MAP);
@@ -1291,10 +1334,11 @@ function initMenu() {
   $('botsminus').onclick = () => { settings.bots = clamp(settings.bots - 1, 1, 11); syncBots(); };
   $('botsplus').onclick = () => { settings.bots = clamp(settings.bots + 1, 1, 11); syncBots(); };
   syncBots();
-  const segs = [...document.querySelectorAll('.seg')];
+  const segs = [...document.querySelectorAll('#s-solo [data-diff]')];
   const syncDiff = () => { for (const s of segs) s.classList.toggle('on', s.dataset.diff === settings.diff); store.set('diff', settings.diff); };
   for (const s of segs) s.onclick = () => { settings.diff = s.dataset.diff; syncDiff(); };
   syncDiff();
+  bindSettingsUI($('s-ctl'));
   $('startsolo').onclick = () => beginGame({ solo: true, bots: settings.bots, diff: settings.diff, map: settings.map });
   $('quick').onclick = () => beginGame({ room: MAPS[settings.map].code, map: settings.map });
   $('createroom').onclick = () => beginGame({ create: true, map: settings.map });

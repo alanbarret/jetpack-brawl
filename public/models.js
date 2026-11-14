@@ -314,6 +314,8 @@ export function animateSoldier(m, o) {
   const u = m.userData, dt = o.dt;
   // ---- death: topple backwards, limbs go limp
   if (o.dead >= 0) {
+    if (u.reloading) { u.reloading = false; u.mount.rotation.z = 0; solveArm(u.armL, SH_L, u.gripL, -1); }
+    if (u.melee > 0 || u.knife.visible) { u.melee = 0; u.knife.visible = false; if (u.weapon) u.weapon.visible = true; }
     const k = Math.min(1, o.dead / 0.6), e = 1 - Math.pow(1 - k, 3), bounce = Math.sin(Math.min(1, o.dead / 0.9) * Math.PI) * 0.06 * (k >= 1 ? 1 : 0);
     u.body.rotation.set(e * 1.42 - bounce, 0, e * 0.15); u.body.position.y = e * 0.22;
     u.legs[0].hip.rotation.x = -0.25 * e; u.legs[1].hip.rotation.x = 0.15 * e;

@@ -141,7 +141,8 @@ class Room {
   }
   backToLobby() {
     this.state = 'lobby'; this.projectiles = []; this.clouds = []; this.resetPickups();
-    for (const p of this.players.values()) { p.ready = false; p.alive = false; p.respawnAt = Infinity; p.kills = 0; p.deaths = 0; p.suicides = 0; }
+    for (const p of this.players.values()) { p.ready = false; p.alive = false; p.respawnAt = Infinity; p.kills = 0; p.deaths = 0; p.suicides = 0; p.streak = 0; }
+    this.roster();
     this.sendLobby(true);
   }
   roster() {
@@ -166,6 +167,13 @@ class Room {
     p.yaw = p.aimYaw = Math.atan2(best[0], best[2]);  // face map centre
     if (p.ai) Object.assign(p.ai, { yaw: p.yaw, pitch: 0, goal: null, target: null, lastKnown: null, unstick: 0, stuckN: 0, chkPos: null });
     else p.priv.push({ e: 'spawn', yaw: p.yaw });
+  }
+
+  finishReload(p, t = now()) {
+    if (!p.reloadUntil || t < p.reloadUntil) return;
+    const w = p.weapons[p.slot];
+    if (w) { const take = Math.min(WEAPONS[w.id].mag - w.mag, w.reserve); w.mag += take; w.reserve -= take; }
+    p.reloadUntil = 0;
   }
 
   onMsg(p, m) {
@@ -193,6 +201,7 @@ class Room {
     p.aimYaw = Number.isFinite(+m.ay) ? +m.ay : p.yaw;
     p.aimPitch = clamp(+m.ap || 0, -1.55, 1.55);
     if (!p.alive || this.state !== 'playing') return;
+    this.finishReload(p, t);
     const dt = Math.min(CFG.INPUT_DT, p.budget); p.budget -= dt;
     stepPlayer(p, { mx: +m.mx || 0, mz: +m.mz || 0, yaw: p.yaw, jump: !!m.j, jet: m.jet === true ? 1 : clamp(+m.jet || 0, 0, 1), sprint: !!m.sp, down: !!m.dn }, dt, this.map);
     p.jet = p.thrusting;
@@ -201,17 +210,18 @@ class Room {
   onAction(p, a) {
     if (!p.alive || this.state !== 'playing') return;
     const t = now();
+    this.finishReload(p, t);
     if (a === 'reload') this.reload(p);
     else if (a === 'swap') {
       const o = 1 - p.slot;
-      if (p.weapons[o]) { p.slot = o; p.reloadUntil = 0; p.nextFire = Math.max(p.nextFire, t + 250); }
+      if (p.weapons[o]) { p.slot = o; p.reloadUntil = 0; p.nextFire = Math.max(p.weapons[o].nextFire || 0, t + 250); }
     } else if (a === 'nade') {
       let ty = p.nadeSel;
       if (!(p.nades[ty] > 0)) ty = NADE_TYPES.find((k) => p.nades[k] > 0);   // selected type empty: throw what we have
       if (ty && t >= p.nextNade) {
         p.nades[ty]--; p.nextNade = t + CFG.NADE_CD; p.protectUntil = 0;
-        const n = nadeLaunch(p.pos, p.vel, p.aimYaw, p.aimPitch, ty);
-        this.projectiles.push({ id: this.nextProj++, type: ty, owner: p.id, pos: n.pos, vel: n.vel, stuck: false, born: t });
+        const n = nadeLaunch(p.pos, p.vel, p.aimYaw, p.aimPitch, ty, this.map);
+        this.projectiles.push({ id: this.nextProj++, type: ty, owner: p.id, ownerName: p.name, ownerColor: p.color, pos: n.pos, vel: n.vel, stuck: false, born: t });
       }
     } else if (a === 'nadesel') {
       const i = NADE_TYPES.indexOf(p.nadeSel);
@@ -221,12 +231,14 @@ class Room {
   }
 
   tryFire(p, rt, zoom) {
-    const t = now(), w = p.weapons[p.slot];
+    const t = now();
+    this.finishReload(p, t);
+    const w = p.weapons[p.slot];
     if (!w) return;
     const W = WEAPONS[w.id];
     if (t < p.nextFire || t < p.reloadUntil) return;
     if (w.mag <= 0) { this.reload(p); return; }
-    w.mag--; p.nextFire = t + 1000 / W.rate; p.protectUntil = 0;
+    w.mag--; w.nextFire = p.nextFire = t + 1000 / W.rate; p.protectUntil = 0;
     const o = [p.pos[0], p.pos[1] + CFG.EYE, p.pos[2]];
     const base = aimDir(p.aimYaw, p.aimPitch);
     if (W.projectile) this.spawnProj(p, 'rocket', o, base, W.speed);
@@ -240,13 +252,16 @@ class Room {
     if (w.mag === 0 && w.reserve > 0) this.reload(p);
   }
   hitscan(p, o, d, W, rt, wid) {
-    let best = rayWorld(o, d, W.range, this.map), target = null, head = false;
+    const worldT = rayWorld(o, d, W.range, this.map);
+    let best = worldT, target = null, head = false;
     for (const q of this.players.values()) {
       if (q === p || !q.alive) continue;
-      for (const hb of hitboxes(this.rewind(q, rt))) {
-        const tt = rayBox(o, d, hb.min, hb.max);
-        if (tt < best) { best = tt; target = q; head = hb.head; }
-      }
+      const [bodyHb, headHb] = hitboxes(this.rewind(q, rt));
+      const tHead = rayBox(o, d, headHb.min, headHb.max);
+      const tBody = rayBox(o, d, bodyHb.min, bodyHb.max);
+      const tt = tHead < worldT ? tHead : tBody;
+      const isHead = tHead < worldT;
+      if (tt < best) { best = tt; target = q; head = isHead; }
     }
     const hit = [o[0] + d[0] * best, o[1] + d[1] * best, o[2] + d[2] * best];
     this.events.push({ e: 'shot', id: p.id, o: o.map(r2), h: hit.map(r2), pl: target ? 1 : 0 });
@@ -266,10 +281,12 @@ class Room {
     return h[0].p;
   }
   reload(p) {
+    const t = now();
+    this.finishReload(p, t);
     const w = p.weapons[p.slot]; if (!w) return;
     const W = WEAPONS[w.id];
-    if (w.mag >= W.mag || w.reserve <= 0 || now() < p.reloadUntil) return;
-    p.reloadUntil = now() + W.reload * 1000;
+    if (w.mag >= W.mag || w.reserve <= 0 || t < p.reloadUntil) return;
+    p.reloadUntil = t + W.reload * 1000;
   }
   melee(p) {
     const t = now(); if (t < p.nextMelee) return;
@@ -288,25 +305,39 @@ class Room {
       break;
     }
   }
-  damage(q, amt, att, wid, head = false, from = null) {
+  damage(q, amt, att, wid, head = false, from = null, attInfo = null) {
     const t = now();
     if (!q.alive || t < q.protectUntil || this.state !== 'playing') return;
-    amt = Math.round(amt);
-    if (q.armor > 0) { const a = Math.min(q.armor, Math.round(amt * 0.6)); q.armor -= a; amt -= a; }
-    q.hp -= amt; q.lastDamage = t;
+    if (wid === 'sniper' && head) {
+      q.armor = 0;
+      q.hp = 0;
+    } else {
+      amt = Math.round(amt);
+      if (q.armor > 0) { const a = Math.min(q.armor, Math.round(amt * 0.6)); q.armor -= a; amt -= a; }
+      q.hp -= amt;
+    }
+    q.lastDamage = t;
     if (att && att !== q) att.priv.push({ e: 'hit', head, kill: q.hp <= 0 });
     const src = from || (att ? att.pos : null);
     q.priv.push({ e: 'dmg', from: src ? [r2(src[0]), r2(src[2])] : null });
-    if (q.hp <= 0) this.kill(q, att, wid, head);
+    if (q.hp <= 0) this.kill(q, att, wid, head, attInfo);
   }
-  kill(q, att, wid, head) {
+  kill(q, att, wid, head, attInfo = null) {
     q.alive = false; q.hp = 0; q.deaths++; q.respawnAt = now() + CFG.RESPAWN_MS; q.jet = false; q.thrusting = false;
     const cw = q.weapons[q.slot];
     if (cw && cw.id !== 'pistol') this.drop(q.pos, cw);
-    if (att && att !== q) { att.kills++; att.streak = (att.streak || 0) + 1; if ([3, 5, 8, 12].includes(att.streak)) this.events.push({ e: 'streak', n: att.name, c: att.color, s: att.streak }); }
-    else q.suicides = (q.suicides || 0) + 1;                // own grenade / rocket / void: counted as a suicide, kills are kept
+    const killerId = att?.id ?? attInfo?.id ?? null;
+    const isSuicide = !killerId || killerId === q.id;
+    const killerName = !isSuicide ? (att?.name || attInfo?.name || null) : null;
+    const killerColor = !isSuicide ? (att?.color || attInfo?.color || null) : null;
+    if (att && !isSuicide) {
+      att.kills++; att.streak = (att.streak || 0) + 1;
+      if ([3, 5, 8, 12].includes(att.streak)) this.events.push({ e: 'streak', id: att.id, n: att.name, c: att.color, s: att.streak });
+    } else if (isSuicide) {
+      q.suicides = (q.suicides || 0) + 1;                // own grenade / rocket / void: counted as a suicide, kills are kept
+    }
     q.streak = 0;
-    this.events.push({ e: 'kill', k: att && att !== q ? att.name : null, kc: att?.color, v: q.name, vc: q.color, w: wid, head, sui: !att || att === q });
+    this.events.push({ e: 'kill', k: killerName, kc: killerColor, v: q.name, vc: q.color, w: wid, head, sui: isSuicide });
     this.roster();
     if (att && att.kills >= CFG.KILL_LIMIT) this.endMatch(att);
   }
@@ -326,11 +357,14 @@ class Room {
       const d = dist(k.pos, p.pos); if (d < bd) { bd = d; best = k; }
     }
     if (!best || p.weapons.some((w) => w && w.id === best.w)) return;
-    const cur = p.weapons[p.slot];
-    p.weapons[p.slot] = { id: best.w, mag: best.mag ?? WEAPONS[best.w].mag, reserve: best.reserve ?? WEAPONS[best.w].reserve };
+    const empty = p.weapons.indexOf(null);
+    const targetSlot = empty >= 0 ? empty : p.slot;
+    const cur = p.weapons[targetSlot];
+    p.weapons[targetSlot] = { id: best.w, mag: best.mag ?? WEAPONS[best.w].mag, reserve: best.reserve ?? WEAPONS[best.w].reserve };
+    p.slot = targetSlot;
     p.reloadUntil = 0;
     this.consume(best);
-    if (cur) this.drop(p.pos, cur);
+    if (cur && cur.id !== 'pistol') this.drop(p.pos, cur);
     p.priv.push({ e: 'pick', type: 'weapon', w: best.w });
   }
   pickupCheck(p) {
@@ -345,8 +379,10 @@ class Room {
       else if (k.type === 'weapon') {
         const W = WEAPONS[k.w];
         const have = p.weapons.find((w) => w && w.id === k.w);
-        if (have) { if (have.reserve < W.reserve * 2) { have.reserve = Math.min(W.reserve * 2, have.reserve + W.mag); took = true; } }
-        else {
+        if (have) {
+          const addAmmo = (k.mag ?? W.mag) + (k.temp ? (k.reserve ?? 0) : 0);
+          if (addAmmo > 0 && have.reserve < W.reserve * 2) { have.reserve = Math.min(W.reserve * 2, have.reserve + addAmmo); took = true; }
+        } else {
           const e = p.weapons.indexOf(null);
           if (e >= 0) { p.weapons[e] = { id: k.w, mag: k.mag ?? W.mag, reserve: k.reserve ?? W.reserve }; took = true; }
         }
@@ -357,7 +393,8 @@ class Room {
 
   spawnProj(p, type, o, d, speed) {
     const v = [d[0] * speed, d[1] * speed, d[2] * speed];
-    this.projectiles.push({ id: this.nextProj++, type, owner: p.id, pos: [o[0] + d[0] * 0.6, o[1] + d[1] * 0.6, o[2] + d[2] * 0.6], vel: v, born: now() });
+    const reach = Math.max(0, Math.min(0.6, rayWorld(o, d, 0.75, this.map) - 0.12));
+    this.projectiles.push({ id: this.nextProj++, type, owner: p.id, ownerName: p.name, ownerColor: p.color, pos: [o[0] + d[0] * reach, o[1] + d[1] * reach, o[2] + d[2] * reach], vel: v, born: now() });
   }
   updateProjectiles(dt) {
     const t = now();
@@ -366,8 +403,13 @@ class Room {
       if (pr.type === 'rocket') {
         const n = Math.max(1, Math.ceil(Math.hypot(...pr.vel) * dt / 0.25)), h = dt / n;
         for (let i = 0; i < n && !pr.dead; i++) {
+          const prev = [...pr.pos];
           for (let a = 0; a < 3; a++) pr.pos[a] += pr.vel[a] * h;
-          if (this.map.boxes.some((b) => inBox(pr.pos, b))) { this.explode(pr, WEAPONS.rocket.dmg, WEAPONS.rocket.radius); break; }
+          if (this.map.boxes.some((b) => inBox(pr.pos, b)) || limitPush(pr.pos, 0.05, this.map.limit)) {
+            pr.pos = prev;
+            this.explode(pr, WEAPONS.rocket.dmg, WEAPONS.rocket.radius);
+            break;
+          }
           for (const q of this.players.values()) {
             if (!q.alive || (q.id === pr.owner && t - pr.born < 300)) continue;
             if (hitboxes(q.pos).some((b) => inBox(pr.pos, b))) { this.explode(pr, WEAPONS.rocket.dmg, WEAPONS.rocket.radius); break; }
@@ -384,7 +426,7 @@ class Room {
       if (pr.type === 'frag' && t - pr.born > N.fuse) this.explode(pr, N.dmg, N.r);
       else if (pr.type === 'gas' && t - pr.born > N.fuse) {
         pr.dead = true;
-        this.clouds.push({ pos: [...pr.pos], owner: pr.owner, until: t + N.dur, next: t });
+        this.clouds.push({ pos: [...pr.pos], owner: pr.owner, ownerName: pr.ownerName, ownerColor: pr.ownerColor, until: t + N.dur, next: t });
         this.events.push({ e: 'gas', p: pr.pos.map(r2), r: N.r, d: N.dur });
       } else if (pr.type === 'prox') {
         if (pr.stuck && t - pr.stuckAt > N.arm) {
@@ -402,9 +444,10 @@ class Room {
       if (t < c.next) continue;
       c.next = t + 500;
       const att = this.players.get(c.owner) || null;
+      const attInfo = { id: c.owner, name: c.ownerName, color: c.ownerColor };
       for (const q of this.players.values()) {
         if (!q.alive || Math.hypot(q.pos[0] - c.pos[0], q.pos[1] + 0.9 - c.pos[1], q.pos[2] - c.pos[2]) > NADES.gas.r) continue;
-        this.damage(q, NADES.gas.dps * 0.5, att, 'gas', false, c.pos);
+        this.damage(q, NADES.gas.dps * 0.5, att, 'gas', false, c.pos, attInfo);
       }
     }
     this.clouds = this.clouds.filter((c) => t < c.until);
@@ -412,6 +455,7 @@ class Room {
   explode(pr, dmg, radius) {
     pr.dead = true;
     const att = this.players.get(pr.owner) || null;
+    const attInfo = { id: pr.owner, name: pr.ownerName, color: pr.ownerColor };
     this.events.push({ e: 'boom', p: pr.pos.map(r2), r: radius });
     for (const q of this.players.values()) {
       if (!q.alive) continue;
@@ -427,7 +471,7 @@ class Room {
       }
       let amt = dmg * (1 - (d / radius) * 0.7);
       if (q.id === pr.owner && pr.type === 'rocket') amt *= 0.5;   // grenades hurt their thrower in full
-      this.damage(q, amt, att, pr.type, false, pr.pos);
+      this.damage(q, amt, att, pr.type, false, pr.pos, attInfo);
     }
   }
 
@@ -448,14 +492,21 @@ class Room {
     const t = now();
     if (this.inLobby()) { this.lobbyTick(t); return; }
     if (this.state === 'ended') { if (t >= this.endAt) { if (this.lobby) this.backToLobby(); else this.resetMatch(); } return; }
-    if (t >= this.matchEnd) { this.endMatch([...this.players.values()].sort((a, b) => b.kills - a.kills)[0]); return; }
+    if (t >= this.matchEnd) {
+      const top = [...this.players.values()].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)[0];
+      this.endMatch(top && top.kills > 0 ? top : null);
+      return;
+    }
     for (const p of this.players.values()) {
-      if (!p.alive) { if (t >= p.respawnAt) this.spawn(p); continue; }
-      if (p.reloadUntil && t >= p.reloadUntil) {
-        const w = p.weapons[p.slot];
-        if (w) { const take = Math.min(WEAPONS[w.id].mag - w.mag, w.reserve); w.mag += take; w.reserve -= take; }
-        p.reloadUntil = 0;
+      if (!p.alive) {
+        if (p.respawnAt !== Infinity && p.pos[1] > -30) {
+          stepPlayer(p, { mx: 0, mz: 0, yaw: p.yaw, jump: false, jet: 0, sprint: false, down: true }, dt, this.map);
+          p.jet = false; p.thrusting = false;
+        }
+        if (t >= p.respawnAt) this.spawn(p);
+        continue;
       }
+      this.finishReload(p, t);
       if (p.bot) { botThink(this, p, dt, t); if (!p.alive) continue; }
       if (t - p.lastDamage > CFG.REGEN_DELAY && p.hp < 100) p.hp = Math.min(100, p.hp + CFG.REGEN_RATE * dt);
       if (p.pos[1] < -10) { p.protectUntil = 0; this.damage(p, 999, null, 'void'); continue; }

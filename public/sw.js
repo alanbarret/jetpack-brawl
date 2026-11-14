@@ -2,7 +2,7 @@
 // Network-first, so a new deploy is always picked up straight away; the cache is only a fallback.
 const CACHE = 'jb-shell-v1';
 const SHELL = ['/', '/game.js', '/controls.js', '/models.js', '/maps.js', '/shared.js', '/vendor/three.module.js',
-  '/manifest.json', '/icon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png', '/apple-touch-icon.png'];
+  '/manifest.json', '/icon.svg', '/icon-32.png', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png', '/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => Promise.allSettled(SHELL.map((u) => c.add(u)))).then(() => self.skipWaiting()));

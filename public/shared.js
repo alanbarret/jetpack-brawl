@@ -19,7 +19,7 @@ export const WEAPONS = {
   smg:     { name: 'SMG',     dmg: 12,  rate: 12,  mag: 30, reserve: 120, reload: 1.6, spread: 0.04,  range: 50,  len: 0.6,  color: '#66ccff' },
   ar:      { name: 'Rifle',   dmg: 18,  rate: 9,   mag: 30, reserve: 90,  reload: 1.9, spread: 0.02,  range: 100, len: 0.8,  color: '#88dd66' },
   shotgun: { name: 'Shotgun', dmg: 11,  rate: 1.2, mag: 6,  reserve: 24,  reload: 2.2, spread: 0.09,  range: 16,  len: 0.7,  color: '#ffaa44', pellets: 8, falloff: [5, 16, 0.25] },
-  sniper:  { name: 'Sniper',  dmg: 95,  rate: 0.8, mag: 5,  reserve: 15,  reload: 2.5, spread: 0.06,  range: 300, len: 1.2,  color: '#cc66ff', scope: true },
+  sniper:  { name: 'Sniper',  dmg: 95,  rate: 0.8, mag: 5,  reserve: 15,  reload: 2.5, spread: 0.008, range: 300, len: 1.2,  color: '#cc66ff', scope: true },
   rocket:  { name: 'Rocket',  dmg: 110, rate: 0.7, mag: 2,  reserve: 6,   reload: 2.8, spread: 0,     range: 0,   len: 1.0,  color: '#ff5544', projectile: true, speed: 35, radius: 5 },
 };
 export const WEAPON_POOL = ['smg', 'ar', 'shotgun', 'sniper', 'rocket'];
@@ -59,8 +59,8 @@ export function rayWorld(o, d, maxT, map = MAP) {
 export function hitboxes(pos) {
   const [x, y, z] = pos;
   return [
-    { min: [x - 0.4, y, z - 0.4], max: [x + 0.4, y + 1.45, z + 0.4], head: false },
-    { min: [x - 0.25, y + 1.45, z - 0.25], max: [x + 0.25, y + 1.9, z + 0.25], head: true },
+    { min: [x - 0.38, y, z - 0.38], max: [x + 0.38, y + 1.42, z + 0.38], head: false },
+    { min: [x - 0.28, y + 1.42, z - 0.28], max: [x + 0.28, y + 1.98, z + 0.28], head: true },
   ];
 }
 
@@ -92,18 +92,25 @@ function moveAxis(s, axis, delta, map) {
 // slow the fall to BRAKE_SPEED, burning a little fuel until you land. Hold `down` to dive fast instead.
 // `hoverArmed` is reused as the "braking" latch so the network snapshot format is unchanged.
 // Map boundary: a rounded rectangle along the rock ring. Players (and flying jetpacks) can't cross it at any height.
-function keepInside(s, L) {
-  const R = L.r - CFG.R, ax = Math.abs(s.pos[0]), az = Math.abs(s.pos[2]);
+export function limitPush(pos, r, L) {
+  if (!L) return null;
+  const R = L.r - r, ax = Math.abs(pos[0]), az = Math.abs(pos[2]);
   const qx = ax - (L.hx - L.r), qz = az - (L.hz - L.r);
   let nx = 0, nz = 0, over = 0;
   if (qx > 0 && qz > 0) { const d = Math.hypot(qx, qz); if (d > R) { over = d - R; nx = qx / d; nz = qz / d; } }
   else if (qx > R) { over = qx - R; nx = 1; }
   else if (qz > R) { over = qz - R; nz = 1; }
-  if (!over) return;
-  const sx = Math.sign(s.pos[0]) || 1, sz = Math.sign(s.pos[2]) || 1;
-  s.pos[0] -= sx * nx * over; s.pos[2] -= sz * nz * over;
-  const vOut = s.vel[0] * sx * nx + s.vel[2] * sz * nz;          // cancel only the outward part of the velocity
-  if (vOut > 0) { s.vel[0] -= sx * nx * vOut; s.vel[2] -= sz * nz * vOut; }
+  if (!over) return null;
+  const sx = Math.sign(pos[0]) || 1, sz = Math.sign(pos[2]) || 1;
+  return [sx * nx, sz * nz, over];
+}
+function keepInside(s, L) {
+  const h = limitPush(s.pos, CFG.R, L);
+  if (!h) return;
+  const [nx, nz, over] = h;
+  s.pos[0] -= nx * over; s.pos[2] -= nz * over;
+  const vOut = s.vel[0] * nx + s.vel[2] * nz;          // cancel only the outward part of the velocity
+  if (vOut > 0) { s.vel[0] -= nx * vOut; s.vel[2] -= nz * vOut; }
 }
 export function stepPlayer(s, inp, dt, map = MAP) {
   const sy = Math.sin(inp.yaw), cy = Math.cos(inp.yaw);
@@ -152,7 +159,7 @@ export function stepPlayer(s, inp, dt, map = MAP) {
   s.onGround = false;
   for (let i = 0; i < n; i++) {
     moveAxis(s, 0, s.vel[0] * h, map); moveAxis(s, 2, s.vel[2] * h, map); moveAxis(s, 1, s.vel[1] * h, map);
-  if (map.limit) keepInside(s, map.limit);
+    if (map.limit) keepInside(s, map.limit);
   }
   if (s.onGround) { s.hoverArmed = false; s.thrusting = false; }
 }
@@ -168,10 +175,12 @@ export const NADE_TYPES = ['frag', 'gas', 'prox'];
 export const NADE_MAX = 3;
 const NADE_G = 20, NADE_DRAG = 0.12;
 // initial state of a thrown grenade from the thrower's eye, aim and velocity
-export function nadeLaunch(pos, vel, yaw, pitch, type) {
+export function nadeLaunch(pos, vel, yaw, pitch, type, map = MAP) {
   const d = aimDir(yaw, Math.min(1.45, pitch + 0.12)), sp = NADES[type].speed;
+  const eye = [pos[0], pos[1] + CFG.EYE, pos[2]];
+  const reach = Math.max(0, Math.min(0.6, rayWorld(eye, d, 0.75, map) - 0.12));
   return {
-    pos: [pos[0] + d[0] * 0.6, pos[1] + CFG.EYE + d[1] * 0.6, pos[2] + d[2] * 0.6],
+    pos: [eye[0] + d[0] * reach, eye[1] + d[1] * reach, eye[2] + d[2] * reach],
     vel: [d[0] * sp + vel[0] * 0.4, d[1] * sp + vel[1] * 0.4, d[2] * sp + vel[2] * 0.4],
     stuck: false,
   };
@@ -195,6 +204,18 @@ export function stepNade(n, dt, map, type) {
         const f = impact > 2.5 ? 0.55 : Math.exp(-9 * h);   // impact scrub, then rolling friction
         n.vel[0] *= f; n.vel[2] *= f;
       } else { n.vel[a] *= -N.bounce * 1.3; n.vel[(a + 1) % 3] *= 0.85; n.vel[(a + 2) % 3] *= 0.85; }
+    }
+    const lh = limitPush(n.pos, 0.1, map.limit);
+    if (lh) {
+      const [nx, nz, over] = lh;
+      n.pos[0] -= nx * over; n.pos[2] -= nz * over;
+      if (type === 'prox') { n.stuck = true; n.vel = [0, 0, 0]; n.normal = Math.abs(nx) >= Math.abs(nz) ? 0 : 2; return; }
+      const vOut = n.vel[0] * nx + n.vel[2] * nz;
+      if (vOut > 0) {
+        const imp = (1 + N.bounce * 1.3) * vOut;
+        n.vel[0] = (n.vel[0] - nx * imp) * 0.85;
+        n.vel[2] = (n.vel[2] - nz * imp) * 0.85;
+      }
     }
   }
 }
