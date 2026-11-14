@@ -5,7 +5,7 @@ import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
-import { CFG, WEAPONS, WEAPON_POOL, MAPS, MAP_IDS, stepPlayer, aimDir, rayWorld, rayBox, hitboxes, inBox, clamp, NADES, NADE_TYPES, NADE_MAX, nadeLaunch, stepNade } from './public/shared.js';
+import { CFG, WEAPONS, WEAPON_POOL, MAPS, MAP_IDS, stepPlayer, aimDir, rayWorld, rayBox, hitboxes, inBox, limitPush, clamp, NADES, NADE_TYPES, NADE_MAX, nadeLaunch, stepNade } from './public/shared.js';
 import { DIFFS, BOT_NAMES, newBotState, botThink } from './bots.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
