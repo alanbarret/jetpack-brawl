@@ -1,6 +1,6 @@
 // Jetpack Brawl service worker: makes the game installable everywhere and lets the loading screen open offline.
 // Network-first, so a new deploy is always picked up straight away; the cache is only a fallback.
-const CACHE = 'jb-shell-v3';
+const CACHE = 'jb-shell-v4';
 const SHELL = ['/', '/game.js', '/controls.js', '/models.js', '/maps.js', '/shared.js', '/vendor/three.module.js',
   '/manifest.json', '/icon.svg', '/icon-32.png', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png', '/apple-touch-icon.png'];
 

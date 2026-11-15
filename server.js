@@ -127,7 +127,7 @@ class Room {
     const t = now();
     if (!force && t - this.lobbySentAt < 250) return;
     this.lobbySentAt = t;
-    const players = [...this.players.values()].filter((p) => !p.bot).map((p) => ({ id: p.id, name: p.name, color: p.color, ready: !!p.ready, host: p.id === this.host }));
+    const players = [...this.players.values()].filter((p) => !p.bot).map((p) => ({ id: p.id, name: p.name, color: p.color, ready: !!p.ready, host: p.id === this.host, mic: !!p.mic }));
     const msg = { type: 'lobby', code: this.code, map: this.mapId, st: this.state, cd: this.state === 'countdown' ? Math.max(0, this.startAt - t) : 0, players };
     for (const p of this.players.values()) if (p.ws) send(p.ws, msg);
   }
@@ -146,7 +146,7 @@ class Room {
     this.sendLobby(true);
   }
   roster() {
-    const list = [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, kills: p.kills, deaths: p.deaths, suicides: p.suicides || 0, bot: p.bot }));
+    const list = [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, kills: p.kills, deaths: p.deaths, suicides: p.suicides || 0, bot: p.bot, mic: !!p.mic }));
     for (const p of this.players.values()) send(p.ws, { type: 'r', list });
   }
   spawn(p) {
@@ -189,6 +189,15 @@ class Room {
     else if (m.type === 'chat') {
       const t = String(m.text || '').slice(0, 120).trim();
       if (t) this.events.push({ e: 'chat', n: p.name, c: p.color, text: t });
+    }
+    else if (m.type === 'mic') {
+      p.mic = !!m.v;
+      this.roster();
+      if (this.inLobby()) this.sendLobby(true);
+    }
+    else if (m.type === 'rtc' && m.to) {
+      const q = this.players.get(+m.to);
+      if (q && !q.bot && q.ws) send(q.ws, { type: 'rtc', from: p.id, sdp: m.sdp || null, ice: m.ice || null });
     }
   }
   onInput(p, m) {

@@ -239,6 +239,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 .sub{font-size:11px;font-weight:600;letter-spacing:.2px;text-transform:none;color:var(--ink2);display:block;margin-top:2px}
 @media (pointer:coarse){
   #mm{width:96px;height:96px}
+  #vchat{top:calc(112px + var(--sat))}
   .bars{width:236px;left:50%;transform:translateX(-50%);top:auto;bottom:calc(6px + var(--sab))}
   .bars .lbl{display:none}
   #slots{top:auto!important;bottom:calc(44px + var(--sab))!important;left:50%;right:auto!important;transform:translateX(-50%);pointer-events:auto}
@@ -316,7 +317,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 
   <div class="screen" id="s-lobby">
     <h2>Room lobby</h2>
-    <div class="codebox"><span>CODE <b id="lcode">—</b></span><button class="cbtn" id="lcopy">📋 COPY</button></div>
+    <div class="codebox"><span>CODE <b id="lcode">—</b></span><div style="display:flex;gap:8px;align-items:center"><button class="cbtn" id="lmic" style="display:inline-flex;align-items:center;gap:5px;color:#ff8a7a;border-color:rgba(255,120,105,.55)"><svg class="m-off" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V5a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23M12 19v3m-4 0h8M2 2l20 20"/></svg><svg class="m-on" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></svg><span id="lmict">MIC OFF</span></button><button class="cbtn" id="lcopy">📋 COPY</button></div></div>
     <div class="mapsel" id="lmapsel"><button class="mapnav" data-dir="-1" aria-label="Previous map">‹</button><canvas width="168" height="100"></canvas><div class="mapinfo"><b class="mapname" id="lmapname"></b><small class="mapdesc" id="lmapdesc"></small></div><button class="mapnav" data-dir="1" aria-label="Next map">›</button></div>
     <div class="lplayers" id="lplayers"></div>
     <div class="lstatus" id="lstatus">Waiting for players…</div>
@@ -329,8 +330,8 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
     <div class="how">
       <b>Jump</b><span>Hold <u>JET</u> to climb. Jump off a high ledge and the jetpack <u>slows your fall</u> automatically</span>
       <b>Jet</b><span>Hold to climb · hold <b style="color:inherit">descend</b> to drop</span>
-      <b>PC</b><span>WASD move · Space jet · C descend · Shift sprint · Mouse aim/fire · Right-click zoom · R reload · Q swap · G throw grenade · T change grenade type · F melee · E take weapon · Tab scores</span>
-      <b>Phone</b><span>PUBG style: left stick moves (slide far up to lock running) · drag the right side to look · big FIRE on the right (drag it to aim) or small FIRE on the left · tap the weapon slots to switch · scope button · grenade chip switches Frag / Gas / Proxy · reload button · JET (swipe down = dive) · hold grenade for arc · PICK UP appears next to weapons</span>
+      <b>PC</b><span>WASD move · Space jet · C descend · Shift sprint · Mouse aim/fire · Right-click zoom · R reload · Q swap · G throw grenade · T change grenade type · F melee · E take weapon · M/V toggle mic · Tab scores</span>
+      <b>Phone</b><span>PUBG style: left stick moves (slide far up to lock running) · drag the right side to look · big FIRE on the right (drag it to aim) or small FIRE on the left · tap the weapon slots to switch · scope button · grenade chip switches Frag / Gas / Proxy · reload button · JET (swipe down = dive) · hold grenade for arc · mic button toggles proximity voice chat</span>
     </div>
     <button class="mbtn ghost" data-go="main">← Back</button>
   </div>
@@ -370,6 +371,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 
 <div id="hud" class="ov">
   <canvas id="mm" width="140" height="140"></canvas>
+  <div id="vchat"></div>
   <div id="timer">8:00</div><div id="stats"></div><div id="roomrow"><span id="room"></span><button id="copyroom" class="cbtn" title="Copy room code">📋 COPY</button></div>
   <div id="feed"></div>
   <div id="scope"></div><div id="cross"></div><div id="hitm"></div><div id="vig"></div><div id="ddir"></div>
@@ -385,6 +387,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
   <div id="board"><table id="boardt"></table><div id="boardr"></div></div>
   <div id="end"><div id="endw"></div><table id="endl"></table><div id="endt" style="font-size:14px;margin-top:12px;color:var(--ink2)"></div></div>
   <button class="ibtn" id="pausebtn" aria-label="Pause"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1.2"/><rect x="14" y="4" width="4" height="16" rx="1.2"/></svg></button>
+  <button class="ibtn" id="micbtn" title="Toggle proximity mic (M / V)" aria-label="Toggle microphone"><svg class="m-off" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V5a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23M12 19v3m-4 0h8M2 2l20 20"/></svg><svg class="m-on" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></svg></button>
 </div>
 
 <div id="pause">
