@@ -67,6 +67,8 @@ function enterMatchView() {
   for (const r of remotes.values()) r.mesh.visible = true;
   $('room').textContent = (soloMatch ? 'Solo vs bots' : privRoom ? 'Private room' : 'Public arena') + ' · ' + MAPC.name;   // code stays hidden in-match
   $('copyroom').style.display = 'none';
+  $('micbtn').style.display = soloMatch ? 'none' : 'flex';
+  $('vchat').style.display = soloMatch ? 'none' : 'flex';
   if (!isTouch) { lockPointer(); setTimeout(() => { if (connected && !inLobby && document.pointerLockElement !== cv && !chatOpen) setPause(true); }, 600); }
 }
 function showLobby() {
@@ -1224,10 +1226,10 @@ let toastTimer;
 function toast(t) { const el = $('toast'); el.textContent = t; el.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(() => (el.style.opacity = 0), 1200); }
 function renderBoard() {
   const list = [...roster.values()].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
-  $('boardt').innerHTML = '<tr><th>Player</th><th title="Kills">K</th><th title="Deaths">D</th><th title="Suicides">S</th><th>Voice</th></tr>' +
+  $('boardt').innerHTML = `<tr><th>Player</th><th title="Kills">K</th><th title="Deaths">D</th><th title="Suicides">S</th>${soloMatch ? '' : '<th>Voice</th>'}</tr>` +
     list.map((p) => {
-      const vc = p.bot ? '—' : p.id === myId ? (micOn ? 'MIC ON' : 'MUTED') : `<button class="vmute ${mutedIds.has(p.id) ? 'muted' : ''}" data-vid="${p.id}">${mutedIds.has(p.id) ? 'MUTED' : p.mic ? 'LIVE' : 'OFF'}</button>`;
-      return `<tr class="${p.id === myId ? 'me' : ''}"><td style="color:${p.color}">${esc(p.name)}</td><td>${p.kills}</td><td>${p.deaths}</td><td>${p.suicides || 0}</td><td>${vc}</td></tr>`;
+      const vc = soloMatch ? '' : `<td>${p.bot ? '—' : p.id === myId ? (micOn ? 'MIC ON' : 'MUTED') : `<button class="vmute ${mutedIds.has(p.id) ? 'muted' : ''}" data-vid="${p.id}">${mutedIds.has(p.id) ? 'MUTED' : p.mic ? 'LIVE' : 'OFF'}</button>`}</td>`;
+      return `<tr class="${p.id === myId ? 'me' : ''}"><td style="color:${p.color}">${esc(p.name)}</td><td>${p.kills}</td><td>${p.deaths}</td><td>${p.suicides || 0}</td>${vc}</tr>`;
     }).join('');
   for (const b of $('boardt').querySelectorAll('.vmute')) b.onclick = (e) => {
     e.stopPropagation();
