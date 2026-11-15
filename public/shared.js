@@ -3,8 +3,7 @@ export const CFG = {
   TICK: 30, SNAP_MS: 50, INPUT_DT: 1 / 60,
   R: 0.4, H: 1.8, EYE: 1.6,
   WALK: 6, SPRINT: 9, JUMP: 7.5, G: 22, JET: 38, MAX_UP: 11, MAX_FALL: 30,
-  FUEL_DRAIN: 0.25, FUEL_REGEN: 0.15, FUEL_DELAY: 0.8,
-  BRAKE_START: 9, BRAKE_SPEED: 4.5, BRAKE_DRAIN: 0.09,
+  FUEL_DRAIN: 0.25, FUEL_REGEN: 0.15, FUEL_DELAY: 0.8, JET_DELAY: 0.22,
   REGEN_DELAY: 4000, REGEN_RATE: 8,
   RESPAWN_MS: 3000, PROTECT_MS: 2000,
   KILL_LIMIT: 20, MATCH_MS: 8 * 60 * 1000, END_MS: 10000, MAX_PLAYERS: 12,
@@ -87,10 +86,8 @@ function moveAxis(s, axis, delta, map) {
 // s: {pos, vel, onGround, fuel, groundTime, hoverArmed, pj, air, thrusting}
 // inp: {mx, mz, yaw, jump, jet, sprint, down}
 //
-// Jetpack model (Mini Militia style): holding `jet` thrusts upward and burns fuel. There is no hover.
-// When you drop from height (falling faster than BRAKE_START) the jetpack automatically fires to
-// slow the fall to BRAKE_SPEED, burning a little fuel until you land. Hold `down` to dive fast instead.
-// `hoverArmed` is reused as the "braking" latch so the network snapshot format is unchanged.
+// Jetpack model: pressing jump/jet on the ground jumps first (0 fuel). Holding past JET_DELAY or
+// pressing again in mid-air ignites the jetpack. Falling does not auto-fire or drain fuel.
 // Map boundary: a rounded rectangle along the rock ring. Players (and flying jetpacks) can't cross it at any height.
 export function limitPush(pos, r, L) {
   if (!L) return null;
@@ -122,33 +119,31 @@ export function stepPlayer(s, inp, dt, map = MAP) {
   s.vel[0] += (dx * sp - s.vel[0]) * a;
   s.vel[2] += (dz * sp - s.vel[2]) * a;
 
-  const down = !!inp.down;
-  s.pj = !!inp.jump;
-  if (inp.jump && s.onGround) s.vel[1] = CFG.JUMP;
-  let thrusting = false;
+  const down = !!inp.down, jump = !!inp.jump;
   // jet strength: true/1 = full thrust; the touch lever sends 0.62..1 for finer height control
   const jp = inp.jet === true ? 1 : Math.max(0, Math.min(1, +inp.jet || 0));
-  if (jp > 0 && s.fuel > 0 && !down) {
-    const top = CFG.MAX_UP * (0.55 + 0.45 * jp);
-    if (s.vel[1] < top) s.vel[1] = Math.min(top, s.vel[1] + CFG.JET * jp * dt);
-    s.fuel = Math.max(0, s.fuel - CFG.FUEL_DRAIN * jp * dt);
-    s.groundTime = 0; thrusting = true; s.hoverArmed = false;
+  if (s.onGround) {
+    s.air = 0;
+    s.hoverArmed = false;
+    if (jump) { s.vel[1] = CFG.JUMP; s.onGround = false; }
+  } else {
+    s.air = (s.air || 0) + dt;
+    if ((jump && !s.pj) || s.air >= CFG.JET_DELAY) s.hoverArmed = true;
   }
-  s.air = s.onGround ? 0 : (s.air || 0) + dt;
+  s.pj = jump;
+
   s.vel[1] = Math.max(-CFG.MAX_FALL, s.vel[1] - CFG.G * dt);
 
-  // automatic fall brake
-  if (!thrusting && !down && s.fuel > 0 && !s.onGround) {
-    if (s.vel[1] < -CFG.BRAKE_START) s.hoverArmed = true;
-  } else if (!thrusting) s.hoverArmed = false;
-  let braking = false;
-  if (s.hoverArmed && !thrusting && !down && s.fuel > 0 && !s.onGround) {
-    braking = true;
-    if (s.vel[1] < -CFG.BRAKE_SPEED) s.vel[1] += (-CFG.BRAKE_SPEED - s.vel[1]) * Math.min(1, 10 * dt);
-    s.fuel = Math.max(0, s.fuel - CFG.BRAKE_DRAIN * dt);
+  let thrusting = false;
+  if (jp > 0 && s.fuel > 0 && !down && !s.onGround && s.hoverArmed) {
+    const top = CFG.MAX_UP * (0.55 + 0.45 * jp);
+    const netAcc = (CFG.JET - CFG.G) * (s.vel[1] < 0 ? 1.6 : 1) * jp;
+    if (s.vel[1] < top) s.vel[1] = Math.min(top, s.vel[1] + (CFG.G + netAcc) * dt);
+    s.fuel = Math.max(0, s.fuel - CFG.FUEL_DRAIN * jp * dt);
     s.groundTime = 0;
-  } else if (s.fuel <= 0) s.hoverArmed = false;
-  s.thrusting = thrusting || braking;
+    thrusting = true;
+  }
+  s.thrusting = thrusting;
 
   if (s.onGround) {
     s.groundTime += dt;
